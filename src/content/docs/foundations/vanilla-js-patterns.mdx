@@ -1,0 +1,143 @@
+---
+title: Vanilla JS Patterns
+description: The Observer pattern, Pub/Sub, and MVC — the classic ideas that every React state library borrows from.
+---
+
+React's state tools didn't appear out of thin air. Every approach — from `useState` to XState to Signals — is built on patterns that existed in vanilla JavaScript long before React. Understanding those patterns means you stop learning APIs by rote and start recognizing the same idea in different clothes.
+
+## Observer
+
+The Observer pattern is the foundation. One object (the subject) maintains a list of dependents (observers) and notifies them when it changes.
+
+```js
+class Subject {
+  constructor() {
+    this.observers = []
+  }
+
+  subscribe(fn) {
+    this.observers.push(fn)
+    return () => {
+      this.observers = this.observers.filter(f => f !== fn)
+    }
+  }
+
+  notify(data) {
+    this.observers.forEach(fn => fn(data))
+  }
+}
+```
+
+This is what Zustand does. What React Query does. What `useSyncExternalStore` lets you build. A store holds data, components subscribe, data changes trigger re-renders.
+
+```tsx
+const store = new Subject()
+
+// React 18's useSyncExternalStore connects any observer-style store to React
+function useStore(store) {
+  return useSyncExternalStore(
+    store.subscribe,
+    () => store.getState()
+  )
+}
+```
+
+The Observer pattern is the simplest form of reactive state. One source of truth, many listeners.
+
+## Pub/Sub
+
+Pub/Sub (Publish/Subscribe) adds a message broker between the publisher and the subscriber. The publisher doesn't know who's listening. The subscriber doesn't know who published. They communicate through channels.
+
+```js
+const bus = {
+  handlers: {},
+  on(event, fn) {
+    (this.handlers[event] ??= []).push(fn)
+  },
+  emit(event, data) {
+    this.handlers[event]?.forEach(fn => fn(data))
+  },
+  off(event, fn) {
+    this.handlers[event] = this.handlers[event]?.filter(f => f !== fn)
+  }
+}
+```
+
+This is the idea behind Redux middleware, custom events, and cross-component communication without prop drilling. Components emit actions; reducers or handlers process them somewhere else.
+
+```js
+// Any component can fire this
+bus.emit('item:added', { id: 1, name: 'widget' })
+
+// Any component can listen
+bus.on('item:added', (item) => {
+  updateUI()
+})
+```
+
+Pub/Sub is useful when the relationship between publishers and subscribers is dynamic or one-to-many. But it comes with a cost: the flow is harder to trace. An event fires, but where does it go? You have to search all the `.on()` calls.
+
+:::caution
+Pub/Sub in large codebases can turn into a "who-called-what" puzzle. This is why Redux moved to explicit dispatch + reducer — tracing an action is one grep away.
+:::
+
+## MVC
+
+Model-View-Controller divides an application into three roles:
+
+- **Model** — data and business logic. Notifies views when it changes.
+- **View** — what the user sees. Subscribes to the model.
+- **Controller** — handles user input, updates the model.
+
+```js
+// Model — holds data and notifies listeners on change
+class Todos {
+  constructor() { this.items = []; this.listeners = [] }
+  add(text) { this.items.push({ text, done: false }); this.notify() }
+  subscribe(fn) { this.listeners.push(fn) }
+  notify() { this.listeners.forEach(fn => fn(this.items)) }
+}
+```
+
+The model owns the data and the business logic. When data changes, it broadcasts to all subscribers.
+
+```js
+// View — pure rendering function, receives data to display
+function render(todos) {
+  list.innerHTML = todos.map(t => `<li>${t.text}</li>`).join('')
+}
+```
+
+The view has no logic — it just transforms data into DOM strings.
+
+```js
+// Controller — handles user input and updates the model
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    model.add(input.value)
+    input.value = ''
+  }
+})
+
+model.subscribe(render)
+```
+
+React borrows heavily from MVC but collapses it. Components are both view and controller. State hooks are the model layer. The pattern is similar but the boundaries are different — React components handle rendering, event handling, and local state in one place.
+
+## How These Map to React
+
+- **Observer** (subject + listeners) — `useSyncExternalStore`, Zustand, React Query
+- **Pub/Sub** (event bus) — Redux dispatch, custom events, `mitt`
+- **MVC** (model updates view) — Unidirectional data flow — state changes trigger re-render
+- **Singleton store** — Zustand store, Redux store, Jotai atom
+- **Command pattern** — `useReducer`, Redux reducer
+- **Factory pattern** — Custom hooks
+
+Each React state library picks a different combination. Zustand is Observer + singleton. Jotai is Observer with atomic granularity. XState is a formalized state machine — its own pattern entirely, but still depends on observers to notify React of transitions.
+
+The point isn't to use these patterns directly. It's to recognize that React's state tools are specific implementations of general ideas. When you understand the underlying pattern, picking the right tool becomes a matter of fit, not fashion.
+
+## References
+- [Gang of Four: Design Patterns](https://en.wikipedia.org/wiki/Design_Patterns) by Erich Gamma et al. — foundational catalog of OOP design patterns including Observer, Mediator
+- [Refactoring Guru: Observer Pattern](https://refactoring.guru/design-patterns/observer) by Refactoring Guru — practical guide to the Observer pattern with code examples
+- [Addy Osmani: Learning JavaScript Design Patterns](https://www.patterns.dev/vanilla/observer-pattern) by Addy Osmani — observer pattern in vanilla JS

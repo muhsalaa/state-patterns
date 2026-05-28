@@ -1,0 +1,114 @@
+---
+title: Decision Flowchart for State Patterns
+description: A framework for choosing between useState, Context, Zustand, TanStack Query, URL state, and other patterns based on your data characteristics.
+---
+
+There is no best state management tool. There are only tools whose constraints match your data's characteristics. The question to answer for every piece of state is: what are its properties?
+
+## The Questions
+
+Six questions determine which pattern fits. Answer them for each piece of state in your app, not for the app as a whole.
+
+### 1. Is this local or shared?
+
+If one component owns the state and only its children need it, `useState` + props is the simplest option. If two or more unrelated components need the same data, you need a shared mechanism.
+
+- **One component**: `useState`
+- **Parent + children**: props or Context
+- **Unrelated components**: Zustand, Redux, Jotai (client state), or TanStack Query (server state)
+
+### 2. Is it client data or server data?
+
+Server data arrives over HTTP and can change without the UI's knowledge. Client data is created and modified entirely inside the browser.
+
+- **Server data**: TanStack Query, SWR, RTK Query — these handle caching, deduplication, background refetching. Don't put API responses in a client store.
+- **Client data**: `useState`, Context, Zustand, Jotai, or URL state — pick based on sharing and persistence needs.
+
+### 3. Does it need to be shareable (URL, deep link)?
+
+State that should survive a page refresh or be sent to someone else belongs in the URL. Search params are the right container for filters, sort order, pagination, and selected item IDs.
+
+- **Yes, should be shareable**: URL search params or hash fragments
+- **No, purely ephemeral**: `useState` or a store
+
+### 4. How many components consume it?
+
+The number of consumers affects the transport cost. Passing data via props to one or two children is fine. Passing it to thirty components spread across the tree suggests Context or a store.
+
+- **1-3 consumers, shallow tree**: props
+- **3+ consumers, deep tree**: Context, Zustand, or a selector-based store
+
+### 5. How often does it change?
+
+High-frequency updates (animations, drawing, real-time inputs) need fine-grained subscriptions. Context re-renders all consumers on every change, which is fine for theme toggles (once per session) but not for cursor position (60 times per second).
+
+- **Rarely (theme, locale, auth)**: Context
+- **Frequently (form inputs, real-time data)**: Zustand, Jotai, or `useState` with local scope
+- **Very frequently (animation, pointer tracking)**: `useRef` or signals-based libraries
+
+### 6. What's the team's familiarity?
+
+This is the most practical question and the one developers skip most often. Redux has a well-defined mental model that scales to large teams. Zustand has a smaller API surface and fewer files to navigate. Context needs zero dependencies and is understood by any React developer.
+
+Choose the tool your team can debug at 3pm on a Friday. A mathematically optimal architecture doesn't help if nobody on the team can trace a state update through the codebase.
+
+## The Flow
+
+Here is the decision process in practice:
+
+```
+Is the data owned by the server?
+  ├── Yes → TanStack Query / SWR / RTK Query
+  └── No  → Is it shareable (URL, deep link)?
+              ├── Yes → URL search params
+              └── No  → How many components need it?
+                          ├── 1-2 components, shallow tree
+                          │   └── useState + props
+                          ├── 3+ components, scattered tree
+                          │   └── How often does it update?
+                          │       ├── Rarely → Context
+                          │       └── Frequently → Zustand / Jotai
+                          └── Many components, team prefers strict patterns
+                              └── Redux Toolkit
+```
+
+A few edge cases to watch for. Form state spans multiple inputs and needs validation — use a form library (React Hook Form, Formik) instead of manual `useState`. Multi-step flows with rigid ordering (wizards, auth flows) map naturally to finite state machines. Animation state shouldn't trigger React re-renders at all — `useRef` or `requestAnimationFrame` directly.
+
+```tsx
+// Example: deciding for a product search feature
+// - Search input value → useState (local, ephemeral)
+// - Search results → TanStack Query (server data)
+// - Selected filters → URL search params (shareable)
+// - Dark mode toggle → Context (global, rarely changes)
+// - Shopping cart → Zustand (business state, shared across pages)
+
+function SearchPage() {
+  const [query, setQuery] = useState('')              // local
+  const { data } = useQuery({                         // server
+    queryKey: ['search', searchParams.get('q')],
+    queryFn: () => fetchSearch(searchParams.get('q')),
+  })
+  const { theme } = useTheme()                        // ambient
+  const { cart } = useCartStore()                     // shared
+
+  // ...
+}
+```
+
+## Common Mistakes
+
+Using TanStack Query for data that never leaves the client. The library assumes a remote source — calling `useQuery` with a local computation means you pay for deduplication and caching logic you don't need.
+
+Using Context as a global store. The re-render semantics don't match. If you find yourself splitting Context into ten providers to control re-renders, reach for a store with selector subscriptions instead.
+
+Using URL state for data that changes many times per second. Every `setSearchParams` call pushes a history entry. The URL is not a real-time transport.
+
+## References
+
+- [React docs: Choosing the Right Pattern](https://react.dev/learn/managing-state) by React Team — managing state overview
+- [TanStack Query docs](https://tanstack.com/query/latest/docs/framework/react/overview) by TanStack — server state management
+- [Zustand docs](https://zustand-demo.pmnd.rs/) by PMNDRS — Zustand store creation
+- [Redux style guide - when to use](https://redux.js.org/style-guide/style-guide#do-not-put-non-serializable-values-in-state-or-actions) by Redux Team — Redux best practices
+- [Jotai docs - atoms](https://jotai.org/docs/introduction) by Poimandres — atomic state management
+- [Kent C. Dodds: Application State Management](https://kentcdodds.com/blog/application-state-management-with-react) by Kent C. Dodds — React state management patterns
+- [TkDodo: Server state vs client state](https://tkdodo.eu/blog/practical-react-query#server-state-vs-client-state) by Dominik Dorfmeister — separating server and client state

@@ -1,0 +1,85 @@
+---
+title: Atomic State
+description: Composing state from independent atoms instead of monolithic stores. Jotai, Recoil, Zustand slices compared to Redux.
+---
+
+Atomic state management splits application state into small, independent units called atoms. Each atom holds one piece of data. Components subscribe to the atoms they need, and only re-render when those specific atoms change.
+
+### Atoms as primitives
+
+An atom is a unit of state with a value and a subscription mechanism. Libraries like Jotai and Recoil define atoms as callable objects — you read their current value and write new values through hooks or direct calls.
+
+```tsx
+import { atom, useAtom } from 'jotai'
+
+const countAtom = atom(0)
+const nameAtom = atom('')
+
+function Counter() {
+  const [count, setCount] = useAtom(countAtom)
+  return <button onClick={() => setCount(c => c + 1)}>{count}</button>
+}
+```
+
+Each atom is self-contained. No reducer, no slice, no store configuration. The atom's state lives as long as something subscribes to it. Remove all subscribers and the atom's value is garbage collected (Jotai) or persists until reset (Recoil).
+
+### Derived atoms
+
+Atoms can compute their value from other atoms. The library tracks the dependency graph and recalculates derived values only when their inputs change.
+
+```tsx
+import { atom, useAtom } from 'jotai'
+
+const todosAtom = atom([
+  { id: 1, text: 'review PR', done: false },
+  { id: 2, text: 'write docs', done: true },
+])
+
+const completedCountAtom = atom((get) =>
+  get(todosAtom).filter(t => t.done).length
+)
+
+function Progress() {
+  const [completed] = useAtom(completedCountAtom)
+  return <span>{completed} done</span>
+}
+```
+
+In Jotai, `get` inside an atom reads other atoms and establishes a subscription. In Recoil, the equivalent is a `selector`. The pattern is the same — declarative, lazy, fine-grained.
+
+### Compared to Redux
+
+Redux stores state in a single object tree. A reducer handles actions and returns a new state object. Components select slices via `useSelector`, and the selector decides whether the component should re-render based on reference equality.
+
+Redux works well when state updates involve multiple pieces at once — a form submission that clears fields, sets a loading flag, and appends a new item. An atomic approach would update those atoms individually, which is more lines of code and risks intermediate states if the updates are not batched.
+
+```tsx
+// Redux — one action updates three slices
+dispatch(submitForm({ id: 1, values }))
+
+// Atomic — three separate writes
+setLoadingAtom(false)
+setItemsAtom(prev => [...prev, newItem])
+setFormAtom(initialValues)
+```
+
+:::note
+Redux Toolkit's `createSlice` organizes state into logical groups, but it is still a single store under one reducer. Slices are a code organization tool, not a reactivity boundary — changing one slice still runs the entire reducer and checks the whole state tree for changes.
+:::
+
+Atomic libraries eliminate the boilerplate of action types, reducers, and dispatch. You write `useAtom` or `useRecoilState` and get a getter/setter pair. The trade-off is that coordinated updates (submit a form, navigate, show a toast) require coordinating multiple atom writes yourself.
+
+### When atomic state fits
+
+Applications with many independent state variables — filters, toggles, selections, form fields — benefit from atoms because each piece re-renders only its consumers. Applications with complex interdependencies and transactional updates may find Redux's action/reducer model clearer.
+
+---
+
+## References
+
+- [Jotai docs](https://jotai.org/docs/core/atom) by Daishi Kato — guide to Jotai atoms
+- [Recoil: State Management for React](https://recoiljs.org/) by Facebook — Recoil's atomic state approach (archived)
+- [Daishi Kato: Jotai Deep Dive](https://github.com/pmndrs/jotai) by Daishi Kato — deep dive into Jotai internals via source code
+- [Robin Wieruch: React State Libraries](https://www.robinwieruch.de/react-state/) by Robin Wieruch — comparison of React state management libraries
+- [MDN: CSS Custom Properties](https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties) by MDN — using CSS custom properties as state containers
+- [Valibot docs](https://valibot.dev/) by Fabian Hiller — TypeScript-first schema validation (for form/state validation)

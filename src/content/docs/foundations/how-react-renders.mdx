@@ -1,0 +1,118 @@
+---
+title: How React Renders
+description: How React turns state changes into DOM updates — render cycle, reconciliation, batching, and commit phases.
+---
+
+State changes don't directly touch the DOM. React sits in between, running a pipeline that decides what actually needs to update. Understanding that pipeline is the difference between guessing why your component re-rendered and knowing.
+
+## The Render Cycle
+
+Every time state changes, React goes through two phases:
+
+**Render phase** — React calls your component function, gets back a description of what the UI should look like (a React element tree), and compares it with the previous description.
+
+**Commit phase** — React takes the difference and applies the minimal set of DOM mutations.
+
+This separation is what makes React "reactive without being coupled to the DOM." Your components describe what they want; React figures out how to make it happen.
+
+```tsx
+function Counter() {
+  const [count, setCount] = useState(0)
+
+  // console.log — this runs on EVERY render
+  console.log('Rendering with count:', count)
+
+  return <button onClick={() => setCount(c => c + 1)}>{count}</button>
+}
+```
+
+Every `setCount` call triggers this cycle. That's normal. The question is whether the work happens in the render phase (cheap — just JS objects) or the commit phase (expensive — actual DOM changes).
+
+## Reconciliation
+
+Reconciliation is React's diffing algorithm. When the render phase produces a new element tree, React compares it to the previous tree node by node.
+
+It's not comparing DOM nodes — it's comparing the virtual representations. If the type of an element changes (e.g., `<div>` becomes `<span>`), React tears down the old tree and rebuilds from scratch. If the type stays the same, it tries to update in place.
+
+```tsx
+// Before — React sees <div> with className "old"
+<div className="old">Hello</div>
+
+// After — React sees <div> with className "new"
+// Same element type => update className, keep the DOM node
+<div className="new">Hello</div>
+```
+
+- **Same type, same key** — Update props in place
+- **Same type, different key** — Unmount old, mount new
+- **Different type** — Unmount old tree, mount new tree
+
+Keys matter because they tell React to reuse or discard DOM nodes. Without keys (or with index-as-key), React might reuse the wrong node and keep stale state.
+
+## Batching
+
+React doesn't apply state updates one at a time. It collects them into batches.
+
+```tsx
+function handleClick() {
+  setCount(c => c + 1)
+  setCount(c => c + 1)
+  setCount(c => c + 1)
+  // Only ONE render — React batches all three updates
+}
+```
+
+In React 18 and later, batching happens everywhere — event handlers, effects, timeouts, and native events. Before React 18, only event handlers were batched.
+
+```tsx
+// Before React 18 — two renders
+setTimeout(() => {
+  setCount(1)  // render
+  setFlag(true) // render
+}, 100)
+
+// React 18+ — one render
+setTimeout(() => {
+  setCount(1)  // queued
+  setFlag(true) // queued
+  // one render at the end
+}, 100)
+```
+
+## How State Changes Flow Through the Tree
+
+By default, when a parent re-renders, all its children re-render too. Not the DOM — just the component functions executing, producing their virtual trees for reconciliation.
+
+This sounds wasteful but it's by design. React can't know if a child depends on the parent's new state without asking. The render is cheap; only the commit is expensive.
+
+When a component's render is doing real work (large computations, deep re-renders), you have escape hatches:
+
+- `React.memo` — skip re-render if props haven't changed (shallow comparison)
+- `useMemo` — cache a computed value between renders
+- `useCallback` — cache a function reference between renders
+
+None of these are free. `React.memo` adds a comparison cost every render. If your component renders fast, the comparison costs more than the render itself.
+
+:::note
+Premature optimization with memo is a common trap. Profile first. If your component renders in under a millisecond, `React.memo` makes it slower.
+:::
+
+## Render vs Commit
+
+The render phase can be interrupted (React can pause work and come back to it). The commit phase cannot — once React starts touching the DOM, it goes all the way.
+
+This is why effects (`useEffect`) run after commit. They fire after the browser has painted, so they won't block visual updates.
+
+```tsx
+useEffect(() => {
+  // This runs AFTER the DOM is updated AND the browser has painted
+  // Safe to measure DOM nodes, start animations, fetch data
+})
+```
+
+If you need to run something before the browser paints (but after the DOM is written), use `useLayoutEffect`. It runs synchronously after commit but before paint.
+
+## References
+- [React docs: Render and Commit](https://react.dev/learn/render-and-commit) by React Team — explanation of React's render cycle
+- [React docs: useState — batching](https://react.dev/reference/react/useState#state-batching) by React Team — state update batching behavior
+- [Dan Abramov: A Complete Guide to useEffect](https://overreacted.io/a-complete-guide-to-useeffect/) by Dan Abramov — deep dive into React lifecycle and rendering

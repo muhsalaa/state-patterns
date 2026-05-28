@@ -1,0 +1,138 @@
+---
+title: Component Composition
+description: Using component composition — children, render props, and slots — to share state without drilling props through intermediate components.
+---
+
+Component composition is a way to share state between components without adding intermediate props. Instead of passing data through every layer of the tree, you structure the components so the data consumer gets rendered directly by the data owner.
+
+## The children prop
+
+React's `children` prop lets a component inject arbitrary JSX into its own render output. This is the simplest form of composition.
+
+```tsx
+function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="layout">
+      <header>My App</header>
+      <main>{children}</main>
+      <footer>Footer</footer>
+    </div>
+  )
+}
+
+// Usage
+function Page() {
+  return (
+    <Layout>
+      <Dashboard />
+    </Layout>
+  )
+}
+```
+
+`Layout` doesn't know about `Dashboard`. It doesn't need to. The state and props that `Dashboard` requires are handled by `Page`, the component that builds the composition. This avoids drilling props like `dashboardData` through `Layout` just so `Layout` can pass them down.
+
+## Render props
+
+A render prop is a function prop that a component calls to decide what to render. The parent controls the rendering while the child controls the environment.
+
+```tsx
+function MouseTracker({ render }: { render: (pos: { x: number; y: number }) => React.ReactNode }) {
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) =>
+      setPosition({ x: e.clientX, y: e.clientY })
+    window.addEventListener('mousemove', handler)
+    return () => window.removeEventListener('mousemove', handler)
+  }, [])
+
+  return <div>{render(position)}</div>
+}
+```
+
+The `MouseTracker` component encapsulates all mouse tracking logic and exposes the current position through the `render` prop. The caller supplies the rendering, keeping the component reusable across different contexts.
+
+```tsx
+// Usage
+function App() {
+  return (
+    <MouseTracker render={({ x, y }) => (
+      <p>Mouse is at {x}, {y}</p>
+    )} />
+  )
+}
+```
+
+The caller gets the mouse position without `MouseTracker` knowing anything about how it's displayed. Render props invert the ownership of the UI — the data source stays generic, and the consumer decides the rendering.
+
+This pattern was more common before hooks. `useMousePosition()` is now a simpler abstraction. But render props still appear in existing codebases and library APIs (React Router's `<Route render={...}>` variant, for example).
+
+## Slots
+
+Slots are named children. Instead of a single `children` prop, a component accepts multiple props, each containing JSX for a specific region.
+
+```tsx
+// Card component — a pure layout shell with named slots
+function Card({ title, body, footer }: {
+  title: React.ReactNode
+  body: React.ReactNode
+  footer?: React.ReactNode
+}) {
+  return (
+    <div className="card">
+      <div className="card-title">{title}</div>
+      <div className="card-body">{body}</div>
+      {footer && <div className="card-footer">{footer}</div>}
+    </div>
+  )
+}
+```
+
+The caller fills each slot with the exact content it needs. `Card` stays generic — it never knows what it's rendering.
+
+```tsx
+// ProfileCard fills all three slots with data-aware content
+function ProfileCard({ user }: { user: User }) {
+  return (
+    <Card
+      title={<Avatar user={user} />}
+      body={<UserDetails user={user} />}
+      footer={<UserActions user={user} />}
+    />
+  )
+}
+```
+
+Each slot gets its own props directly from the composition caller. No intermediate component passes through props it doesn't need. The `Card` component is a pure layout shell.
+
+## When composition beats lifting
+
+Composition and lifting state up both solve the sibling-communication problem, but they do it differently. Lifting moves state to a parent and drills it down. Composition moves the consumer up — the data owner renders the data consumer directly, bypassing intermediates.
+
+The decision rule: if an intermediate component exists only to forward props, replace it with composition. Instead of `<Layout><Sidebar><NavItem /></Sidebar></Layout>` with props going through `Layout` and `Sidebar`, have the parent that owns the state render the `NavItem` directly and pass it as a child prop.
+
+```tsx
+// Before: drilling theme through Layout and Sidebar
+function App() {
+  const [theme] = useState('dark')
+  return <Layout theme={theme} />
+}
+
+// After: composition
+function App() {
+  const [theme] = useState('dark')
+  return (
+    <Layout>
+      <NavItem theme={theme} />
+    </Layout>
+  )
+}
+```
+
+## References
+
+- [React docs: Passing JSX as children](https://react.dev/learn/passing-props-to-a-component#passing-jsx-as-children) by React Team — passing components as children props
+- [React docs: Combining components together](https://react.dev/learn/your-first-component#nesting-and-organizing-components) by React Team — nesting and organizing components
+- [patterns.dev: Render Props Pattern](https://www.patterns.dev/react/render-props-pattern/) by Lydia Hallie & Addy Osmani — render props pattern explained
+- [React docs: Composition vs Inheritance](https://react.dev/learn/thinking-in-react#step-3-find-the-minimal-but-complete-representation-of-ui-state) by React Team — React's approach to component composition

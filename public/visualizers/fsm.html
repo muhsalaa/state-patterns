@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FSM Visualizer — Data Fetching Flow</title>
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d0f17;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+    padding: 20px;
+  }
+
+  .container {
+    max-width: 1000px;
+    width: 100%;
+    background: #13161f;
+    border: 1px solid #252a3a;
+    border-radius: 24px;
+    padding: 28px 32px 32px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.7);
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    color: #e8edf5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header h1 small {
+    font-size: 13px;
+    font-weight: 400;
+    color: #7a8296;
+    background: #1b2030;
+    padding: 2px 10px;
+    border-radius: 6px;
+  }
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #9aa2b8;
+    background: #1b2030;
+    padding: 6px 14px 6px 12px;
+    border-radius: 20px;
+    border: 1px solid #262c3e;
+  }
+  .status-badge .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #2b3246;
+    transition: background .35s;
+  }
+  .status-badge .dot.active { background: #5b9cf5; box-shadow: 0 0 8px #3b82f6; }
+  .status-badge .dot.transitioning { background: #f5b85b; box-shadow: 0 0 8px #f59e0b; }
+  .status-badge .dot.success { background: #34d399; box-shadow: 0 0 8px #10b981; }
+  .status-badge .dot.error { background: #f87171; box-shadow: 0 0 8px #ef4444; }
+
+  /* ── Canvas Wrapper ── */
+  .canvas-wrap {
+    position: relative;
+    background: #10131e;
+    border: 1px solid #1e2335;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 18px;
+    min-height: 440px;
+    overflow: hidden;
+  }
+  .canvas-wrap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(59,130,246,.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(16,185,129,.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  /* ── SVG arrows layer ── */
+  #arrows-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* ── State grid layout ── */
+  .states-grid {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 40px 60px;
+    width: 100%;
+    padding: 20px 10px;
+  }
+
+  /* ── State box ── */
+  .state {
+    position: relative;
+    background: #1a1f31;
+    border: 2px solid #2a3048;
+    border-radius: 16px;
+    padding: 20px 18px 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .35s cubic-bezier(.4,0,.2,1);
+    user-select: none;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .state:hover {
+    border-color: #3b4465;
+    background: #1f253b;
+    transform: translateY(-1px);
+  }
+  .state.active {
+    border-color: #3b82f6;
+    background: #1a2350;
+    box-shadow:
+      0 0 24px rgba(59,130,246,.18),
+      inset 0 1px 0 rgba(59,130,246,.12);
+    transform: translateY(-2px);
+  }
+  .state.active .state-icon { color: #60a5fa; }
+  .state.active .state-label { color: #e0e7ff; }
+  .state.active .state-name { color: #93bbfc; }
+
+  .state-icon {
+    font-size: 26px;
+    margin-bottom: 6px;
+    color: #4b5670;
+    transition: color .35s;
+  }
+  .state-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #c8d0e0;
+    transition: color .35s;
+    letter-spacing: .2px;
+  }
+  .state-label {
+    font-size: 12px;
+    color: #5e6a84;
+    margin-top: 3px;
+    transition: color .35s;
+  }
+
+  /* ── Transition buttons inside each state ── */
+  .transitions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+    justify-content: center;
+  }
+  .trans-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid #2f3752;
+    background: #1c2238;
+    color: #8e99b5;
+    transition: all .2s;
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    letter-spacing: .2px;
+  }
+  .trans-btn:hover {
+    background: #2a3350;
+    border-color: #4a5880;
+    color: #c4cee4;
+  }
+  .trans-btn:active {
+    transform: scale(.95);
+  }
+  .trans-btn .arrow {
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  /* ── Positioning override for grid items ── */
+  .state-idle     { grid-column: 1; grid-row: 1; }
+  .state-loading  { grid-column: 2; grid-row: 1; }
+  .state-success  { grid-column: 2; grid-row: 2; }
+  .state-error    { grid-column: 1; grid-row: 2; }
+
+  /* ── History panel ── */
+  .history-panel {
+    background: #10131e;
+    border: 1px solid #1e2335;
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .history-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #7a8296;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+  }
+  .clear-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 11px;
+    color: #5a6480;
+    padding: 2px 10px;
+    border-radius: 6px;
+    border: 1px solid #242a3e;
+    transition: all .2s;
+  }
+  .clear-btn:hover {
+    color: #c8d0e0;
+    border-color: #3a4460;
+    background: #1c2236;
+  }
+
+  #history-list {
+    list-style: none;
+    max-height: 90px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #1e2335 transparent;
+  }
+  #history-list::-webkit-scrollbar { width: 4px; }
+  #history-list::-webkit-scrollbar-track { background: transparent; }
+  #history-list::-webkit-scrollbar-thumb { background: #1e2335; border-radius: 2px; }
+
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 4px 0;
+    color: #8e99b5;
+    animation: slideIn .25s ease-out;
+  }
+  .history-item .h-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .history-item .h-time {
+    font-size: 10.5px;
+    color: #4b5670;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .history-item .h-arrow {
+    color: #4b5670;
+    margin: 0 2px;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Transition flash ring ── */
+  .flash-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 20px;
+    border: 2px solid transparent;
+    pointer-events: none;
+    animation: flashPop .5s ease-out forwards;
+  }
+  @keyframes flashPop {
+    0%   { border-color: #3b82f6; transform: scale(1); opacity: .8; }
+    100% { border-color: transparent; transform: scale(1.06); opacity: 0; }
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    .container { padding: 16px; }
+    .states-grid { gap: 24px 20px; padding: 10px 0; }
+    .state { padding: 14px 12px; min-height: 80px; }
+    .state-icon { font-size: 20px; }
+    .state-name { font-size: 14px; }
+    .trans-btn { font-size: 10px; padding: 3px 10px; }
+  }
+  @media (max-width: 420px) {
+    body { overflow: auto; -webkit-overflow-scrolling: touch; }
+    .container { padding: 10px; }
+    .states-grid { gap: 12px; grid-template-columns: 1fr 1fr; padding: 6px 0; }
+    .state { padding: 10px 8px; min-height: 60px; }
+    .state-icon { font-size: 16px; }
+    .state-value { width: 28px; height: 28px; font-size: 11px; }
+    .state-name { font-size: 11px; }
+    .status-text { font-size: 10px; }
+    .trans-btn { font-size: 11px; padding: 6px 10px; min-width: 36px; min-height: 36px; }
+    .controls { gap: 8px; }
+    button:active { transform: scale(0.95); }
+    * { -webkit-tap-highlight-color: transparent; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>
+      ⚡ FSM Visualizer
+      <small>data-fetching flow</small>
+    </h1>
+    <div class="status-badge">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">idle</span>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div class="canvas-wrap" id="canvas">
+    <svg id="arrows-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" preserveAspectRatio="none"></svg>
+
+    <div class="states-grid" id="states-grid">
+
+      <!-- IDLE -->
+      <div class="state state-idle" data-state="idle">
+        <div class="state-icon">⏸️</div>
+        <div class="state-name">Idle</div>
+        <div class="state-label">waiting for trigger</div>
+        <div class="transitions">
+          <button class="trans-btn" data-from="idle" data-to="loading">
+            <span class="arrow">▶</span> Fetch Data
+          </button>
+        </div>
+      </div>
+
+      <!-- LOADING -->
+      <div class="state state-loading" data-state="loading">
+        <div class="state-icon">⏳</div>
+        <div class="state-name">Loading</div>
+        <div class="state-label">request in-flight</div>
+        <div class="transitions">
+          <button class="trans-btn" data-from="loading" data-to="success">
+            <span class="arrow">✓</span> Success
+          </button>
+          <button class="trans-btn" data-from="loading" data-to="error">
+            <span class="arrow">✗</span> Error
+          </button>
+        </div>
+      </div>
+
+      <!-- SUCCESS -->
+      <div class="state state-success" data-state="success">
+        <div class="state-icon">✅</div>
+        <div class="state-name">Success</div>
+        <div class="state-label">data loaded</div>
+        <div class="transitions">
+          <button class="trans-btn" data-from="success" data-to="idle">
+            <span class="arrow">↺</span> Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- ERROR -->
+      <div class="state state-error" data-state="error">
+        <div class="state-icon">❌</div>
+        <div class="state-name">Error</div>
+        <div class="state-label">something went wrong</div>
+        <div class="transitions">
+          <button class="trans-btn" data-from="error" data-to="idle">
+            <span class="arrow">↺</span> Retry
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="history-panel">
+    <div class="history-header">
+      <h3>📋 Transition Log</h3>
+      <button class="clear-btn" id="clear-btn">Clear</button>
+    </div>
+    <ul id="history-list"></ul>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ─── Graph definition ───────────────────────────────────────────
+  const STATES = ['idle', 'loading', 'success', 'error'];
+
+  const TRANSITIONS = [
+    { from: 'idle',    to: 'loading' },
+    { from: 'loading', to: 'success' },
+    { from: 'loading', to: 'error'   },
+    { from: 'success', to: 'idle'    },
+    { from: 'error',   to: 'idle'    },
+  ];
+
+  // ─── DOM refs ───────────────────────────────────────────────────
+  const stateEls     = document.querySelectorAll('.state');
+  const statusDot    = document.getElementById('status-dot');
+  const statusText   = document.getElementById('status-text');
+  const historyList  = document.getElementById('history-list');
+  const clearBtn     = document.getElementById('clear-btn');
+  const svg          = document.getElementById('arrows-svg');
+  const canvas       = document.getElementById('canvas');
+
+  // ─── State ──────────────────────────────────────────────────────
+  let currentState  = 'idle';
+  let transitioning = false;
+
+  // ─── Arrow storage ──────────────────────────────────────────────
+  let arrowPaths = {};  // key: "from→to"
+
+  // ─── Colors ─────────────────────────────────────────────────────
+  const COLORS = {
+    idle:    '#5b8def',
+    loading: '#f5b85b',
+    success: '#34d399',
+    error:   '#f87171',
+    arrow:   '#3b4465',
+    arrowActive: '#5b9cf5',
+  };
+
+  // ─── Helper: update UI ──────────────────────────────────────────
+  function updateUI(prevState, newState) {
+    // state boxes
+    stateEls.forEach(el => {
+      el.classList.toggle('active', el.dataset.state === newState);
+    });
+
+    // status badge
+    statusDot.className = 'dot ' + newState;
+    statusText.textContent = newState;
+
+    // redraw arrows
+    drawArrows(newState);
+  }
+
+  // ─── Transition logic ───────────────────────────────────────────
+  function doTransition(from, to) {
+    if (transitioning) return;
+    if (from !== currentState) return;  // button from stale state
+
+    const prev = currentState;
+    currentState = to;
+    transitioning = true;
+
+    // highlight dot
+    statusDot.className = 'dot transitioning';
+    statusText.textContent = prev + ' → ' + to;
+
+    // add history
+    addHistoryItem(prev, to);
+
+    // draw arrows with animation cue
+    drawArrows(to, true);
+
+    // flash the target box
+    const targetEl = document.querySelector(`.state[data-state="${to}"]`);
+    if (targetEl) {
+      const ring = document.createElement('div');
+      ring.className = 'flash-ring';
+      targetEl.appendChild(ring);
+      setTimeout(() => ring.remove(), 500);
+    }
+
+    // after a short delay, settle
+    setTimeout(() => {
+      transitioning = false;
+      updateUI(prev, to);
+    }, 320);
+  }
+
+  // ─── History ────────────────────────────────────────────────────
+  function addHistoryItem(from, to) {
+    const now = new Date();
+    const ts  = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const li = document.createElement('li');
+    li.className = 'history-item';
+
+    const dot = document.createElement('span');
+    dot.className = 'h-dot';
+    dot.style.background = COLORS[to] || '#5e6a84';
+
+    const time = document.createElement('span');
+    time.className = 'h-time';
+    time.textContent = ts;
+
+    const label = document.createElement('span');
+    label.innerHTML = `<strong style="color:${COLORS[from] || '#8e99b5'}">${from}</strong> <span class="h-arrow">→</span> <strong style="color:${COLORS[to] || '#8e99b5'}">${to}</strong>`;
+
+    li.appendChild(dot);
+    li.appendChild(time);
+    li.appendChild(label);
+    historyList.prepend(li);
+
+    // keep only last 50
+    while (historyList.children.length > 50) {
+      historyList.removeChild(historyList.lastChild);
+    }
+  }
+
+  // ─── Arrow drawing ──────────────────────────────────────────────
+  function getStateCenter(stateName) {
+    const el = document.querySelector(`.state[data-state="${stateName}"]`);
+    if (!el) return { x: 0, y: 0 };
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const elRect     = el.getBoundingClientRect();
+
+    // viewBox is 1000×500
+    const scaleX = 1000 / canvasRect.width;
+    const scaleY = 500  / canvasRect.height;
+
+    return {
+      x: (elRect.left - canvasRect.left + elRect.width / 2) * scaleX,
+      y: (elRect.top  - canvasRect.top + elRect.height / 2) * scaleY,
+    };
+  }
+
+  function computeArrowPath(from, to, activeState) {
+    const p1 = getStateCenter(from);
+    const p2 = getStateCenter(to);
+    if (!p1 || !p2) return null;
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 1) return null;
+
+    // offset perpendicular to avoid overlapping on multi-arrow edges
+    // only loading→success and loading→error share a source
+    const isMulti = (from === 'loading' && (to === 'success' || to === 'error'));
+    const perpOffset = isMulti ? (to === 'error' ? 28 : -28) : 0;
+
+    const nx = -dy / len * perpOffset;
+    const ny =  dx / len * perpOffset;
+
+    const sx = p1.x + nx;
+    const sy = p1.y + ny;
+    const ex = p2.x + nx;
+    const ey = p2.y + ny;
+
+    // shorten so arrows stop at box edge (about 28px from center)
+    const shorten = 34;
+    const frac = shorten / len;
+    const sx2 = sx + dx * frac;
+    const sy2 = sy + dy * frac;
+    const ex2 = ex - dx * frac;
+    const ey2 = ey - dy * frac;
+
+    // control point for slight curve — only for multi-arrow edges
+    let cx, cy;
+    if (isMulti) {
+      const perp = perpOffset > 0 ? 40 : -40;
+      cx = (sx2 + ex2)/2 + perp * (-dy/len);
+      cy = (sy2 + ey2)/2 + perp * ( dx/len);
+    } else {
+      cx = (sx2 + ex2)/2;
+      cy = (sy2 + ey2)/2;
+    }
+
+    const d = `M ${sx2.toFixed(1)} ${sy2.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${ex2.toFixed(1)} ${ey2.toFixed(1)}`;
+
+    // arrowhead angle at endpoint
+    const at = isMulti ? Math.atan2(-(ey2 - cy), -(ex2 - cx)) : Math.atan2(dy, dx);
+
+    return { d, angle: at, tipX: ex2, tipY: ey2 };
+  }
+
+  function drawArrows(activeState, animate) {
+    // clear
+    svg.innerHTML = '';
+
+    // Need a small delay so box positions are settled after layout
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+
+        TRANSITIONS.forEach(tr => {
+          const key = tr.from + '→' + tr.to;
+          const pathData = computeArrowPath(tr.from, tr.to, activeState);
+          if (!pathData) return;
+
+          const isActive = (tr.from === activeState);
+          const isRecent = animate && false; // handled via CSS animation
+
+          // marker
+          const markerId = 'arrowhead-' + key.replace('→', '-');
+          const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+          marker.setAttribute('id', markerId);
+          marker.setAttribute('viewBox', '0 0 10 10');
+          marker.setAttribute('refX', 8);
+          marker.setAttribute('refY', 5);
+          marker.setAttribute('markerWidth', 7);
+          marker.setAttribute('markerHeight', 7);
+          marker.setAttribute('orient', 'auto');
+
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          const color = isActive ? COLORS.arrowActive : COLORS.arrow;
+          poly.setAttribute('points', '0 0, 10 5, 0 10');
+          poly.setAttribute('fill', color);
+          marker.appendChild(poly);
+          defs.appendChild(marker);
+
+          // path
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData.d);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', isActive ? COLORS.arrowActive : COLORS.arrow);
+          path.setAttribute('stroke-width', isActive ? 2.6 : 1.8);
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('marker-end', 'url(#' + markerId + ')');
+          path.style.transition = 'stroke .35s, stroke-width .35s';
+
+          // dash animation for active outgoing
+          if (isActive && animate) {
+            const length = path.getTotalLength();
+            path.style.strokeDasharray  = length;
+            path.style.strokeDashoffset = length;
+            path.style.animation = `dash-${key.replace(/→/g, '-')} .4s ease-out forwards`;
+            // inject a one-shot keyframes
+            const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+            style.textContent = `
+              @keyframes dash-${key.replace(/→/g, '-')} {
+                to { stroke-dashoffset: 0; }
+              }
+            `;
+            defs.appendChild(style);
+          }
+
+          svg.appendChild(defs);
+          svg.appendChild(path);
+        });
+      });
+    });
+  }
+
+  // ─── Event listeners ────────────────────────────────────────────
+  document.querySelectorAll('.trans-btn').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const from = this.dataset.from;
+      const to   = this.dataset.to;
+      doTransition(from, to);
+    });
+  });
+
+  // also click on state boxes to trigger first available transition
+  stateEls.forEach(el => {
+    el.addEventListener('click', function() {
+      const stateName = this.dataset.state;
+      if (stateName !== currentState) return;
+      const btn = this.querySelector('.trans-btn');
+      if (btn) btn.click();
+    });
+  });
+
+  clearBtn.addEventListener('click', () => {
+    historyList.innerHTML = '';
+  });
+
+  // redraw arrows on resize
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => drawArrows(currentState, false), 150);
+  });
+
+  // ─── Init ───────────────────────────────────────────────────────
+  updateUI(null, 'idle');
+
+  // Initial arrow draw after layout
+  setTimeout(() => drawArrows('idle', false), 100);
+
+})();
+</script>
+
+</body>
+</html>

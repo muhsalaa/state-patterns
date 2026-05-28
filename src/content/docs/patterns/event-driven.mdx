@@ -1,0 +1,113 @@
+---
+title: Event-Driven State
+description: State changes triggered and processed through events. Redux middleware (Saga, Observable), Event Sourcing, CQRS concepts for frontend state management.
+---
+
+Event-driven state management treats every state change as a discrete event with a type, payload, and timestamp. Components dispatch events (actions) describing what happened. A middleware layer intercepts these events and decides what to do — run side effects, call APIs, transform the event stream, or log everything for debugging.
+
+### Redux middleware as event processor
+
+Redux is the most common expression of this pattern in frontend applications. Every state mutation starts with `dispatch({ type, payload })`. Middleware sits between dispatch and the reducer, transforming, filtering, or extending events.
+
+```tsx
+import { createSlice, configureStore } from '@reduxjs/toolkit'
+
+const todosSlice = createSlice({
+  name: 'todos',
+  initialState: [],
+  reducers: {
+    addTodo(state, action) {
+      state.push({ id: Date.now(), text: action.payload, done: false })
+    },
+  },
+})
+
+store.dispatch(todosSlice.actions.addTodo('buy milk'))
+```
+
+### Saga and Observable middleware
+
+Redux-Saga runs generator-based processes that listen for specific action types. A saga can dispatch multiple actions, call APIs, and coordinate complex workflows.
+
+```tsx
+import { takeLatest, call, put } from 'redux-saga/effects'
+
+function* fetchUser(action) {
+  try {
+    const user = yield call(api.fetchUser, action.payload.id)
+    yield put({ type: 'USER_FETCH_SUCCEEDED', payload: user })
+  } catch (e) {
+    yield put({ type: 'USER_FETCH_FAILED', payload: e.message })
+  }
+}
+
+function* watchFetchUser() {
+  yield takeLatest('USER_FETCH_REQUESTED', fetchUser)
+}
+```
+
+Redux-Observable uses RxJS streams. An epic receives a stream of all dispatched actions and returns a stream of new actions. This gives you debouncing, throttling, merging, and cancellation via observables.
+
+```tsx
+import { ofType } from 'redux-observable'
+import { map, switchMap, catchError } from 'rxjs/operators'
+import { from } from 'rxjs'
+
+const fetchUserEpic = (action$) =>
+  action$.pipe(
+    ofType('USER_FETCH_REQUESTED'),
+    switchMap((action) =>
+      from(api.fetchUser(action.payload.id)).pipe(
+        map(user => ({ type: 'USER_FETCH_SUCCEEDED', payload: user })),
+        catchError(err => [{ type: 'USER_FETCH_FAILED', payload: err.message }])
+      )
+    )
+  )
+```
+
+### Event Sourcing and CQRS
+
+Event Sourcing stores every state change as an append-only event log instead of a single current state. To reconstruct the current state, replay all events from the beginning. CQRS (Command Query Responsibility Segregation) separates writes (commands) from reads (queries) at the architectural level.
+
+These patterns originated on the backend but have frontend applications. Redux DevTools implements a local event log — time-travel debugging replays past actions. Some state libraries (Evolu, Replicache) sync event logs to a server and rebase local changes on top of remote ones.
+
+```tsx
+// Event sourcing at the reducer level
+function reducer(state = [], action) {
+  switch (action.type) {
+    case 'TODO_ADDED':
+      return [...state, { ...action.payload, addedAt: Date.now() }]
+    case 'TODO_TOGGLED':
+      return state.map(t =>
+        t.id === action.payload.id ? { ...t, done: !t.done } : t
+      )
+    default:
+      return state
+  }
+}
+```
+
+### When event-driven adds clarity
+
+Applications with complex side-effect chains benefit from event-driven middleware. A user logs in and you need to fetch their profile, load permissions, redirect to the dashboard, and show a notification. A saga or epic can express this as a series of declarative steps. Without middleware, these effects are scattered across `useEffect` calls and event handlers.
+
+Applications that need audit trails, undo/redo, or optimistic updates also benefit from explicit events — each change is recorded and reversible.
+
+### When it adds complexity
+
+Small to medium applications pay the cost of action types, middleware boilerplate, and indirection without getting proportional benefit. An event-driven Redux setup with three actions and one API call adds more ceremony than clarity.
+
+:::tip
+Start with direct state management (useState, signals, atoms). Introduce events only when you need to coordinate sequences, replay changes, or audit state mutations.
+:::
+
+---
+
+## References
+
+- [Node.js docs: Events](https://nodejs.org/api/events.html) by Node.js Contributors — EventEmitter API and patterns
+- [Redux docs: Redux Fundamentals](https://redux.js.org/tutorials/fundamentals/part-2-concepts-data-flow) by Redux Team — dispatch/action data flow as event-driven architecture
+- [Martin Fowler: Event Sourcing](https://martinfowler.com/eaaDev/EventSourcing.html) by Martin Fowler — event sourcing pattern overview
+- [David Khourshid: Statecharts](https://statecharts.dev/) by David Khourshid — formalized state machines and event handling
+- [Wikipedia: Publish-Subscribe Pattern](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern) by Wikipedia — fundamental pub-sub design pattern
+- [Kyle Simpson: You Don't Know JS — Events](https://github.com/getify/You-Dont-Know-JS/tree/2nd-ed/sync-async) by Kyle Simpson — async patterns including events

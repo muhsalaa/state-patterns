@@ -1,0 +1,77 @@
+---
+title: Props
+description: How props work as React's basic communication mechanism, when they're enough, and when props drilling becomes a problem.
+---
+
+Props are how React components talk to each other. A parent passes data down to a child through attributes on the JSX tag, and the child receives them as a plain object. This is the fundamental data-flow unit in React — one-directional, explicit, and simple to trace.
+
+```tsx
+function Parent() {
+  return <Child name="Alice" age={30} />
+}
+
+function Child({ name, age }: { name: string; age: number }) {
+  return <p>{name} is {age} years old</p>
+}
+```
+
+Props are read-only. A child cannot (and should not) mutate props directly. If a child needs to change something, it calls a callback function passed from the parent — the state stays in the parent, and the child merely signals a request.
+
+```tsx
+function Parent() {
+  const [count, setCount] = useState(0)
+  return <Child count={count} onIncrement={() => setCount(c => c + 1)} />
+}
+
+function Child({
+  count,
+  onIncrement,
+}: {
+  count: number
+  onIncrement: () => void
+}) {
+  return <button onClick={onIncrement}>{count}</button>
+}
+```
+
+## When props are enough
+
+Props work well when the data flow is shallow — one or two levels of nesting. A page component passing props to a layout section, a form passing input values to a preview panel. The call graph is easy to follow because every data dependency is declared at the call site.
+
+Props also work for leaf components that receive simple, stable data. A `UserAvatar` that takes a `userId` and `size`, or a `StatusBadge` that takes a `status` string. These are pure display components. They don't need context or stores.
+
+## Props drilling
+
+Props drilling is when data passes through intermediate components that don't use it — just forward it deeper. A `theme` object that travels from `App` → `Layout` → `Sidebar` → `MenuItem` is a classic case. The intermediate components (`Layout`, `Sidebar`) carry a prop they never read.
+
+```tsx
+function App() {
+  const [theme, setTheme] = useState('dark')
+  return <Layout theme={theme} onThemeChange={setTheme} />
+}
+
+function Layout({ theme, onThemeChange }: LayoutProps) {
+  // Layout doesn't use theme — just forwards it
+  return <Sidebar theme={theme} onThemeChange={onThemeChange} />
+}
+```
+
+Two problems emerge. First, the component signatures bloat with transit-only props, making them harder to test and reuse in isolation. Second, every intermediate component re-renders when the data changes, even though only the leaf component actually renders it.
+
+Props drilling isn't always a problem. If the tree is shallow (3 levels or fewer) and the intermediate components are unlikely to be extracted, drilling is simpler than adding a context provider. The cost of drilling is visible in the code; the cost of context is hidden in re-renders.
+
+## When props aren't enough
+
+Three situations push props past their limit:
+
+- **Deeply nested data** — a value consumed five levels down.
+- **Cross-cutting concerns** — a theme, locale, or auth token used by most components.
+- **Sibling communication** — two components at the same level that need to share state require a common parent, which means either lifting state up (and drilling through intermediates) or skipping levels with context.
+
+Each of these has a dedicated pattern — lifting state, composition, context, or event buses — covered in the other pages of this section.
+
+## References
+
+- [React docs: Passing Props to a Component](https://react.dev/learn/passing-props-to-a-component) by React Team — how props work in React
+- [React docs: Props — a visual guide](https://react.dev/learn/thinking-in-react#props) by React Team — thinking in React with props
+- [React docs: When to use context vs props](https://react.dev/learn/passing-data-deeply-with-context#before-you-use-context) by React Team — deciding between context and props

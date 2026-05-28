@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signals — Reactive Dependency Graph</title>
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    user-select: none;
+    overflow: auto; /* changed from hidden to allow content scroll on mobile */
+  }
+
+  /* ── Container ── */
+  .app {
+    width: min(95vw, 1000px);
+    height: min(90vh, 720px);
+    background: #161b22;
+    border-radius: 20px;
+    border: 1px solid #30363d;
+    box-shadow: 0 25px 60px rgba(0,0,0,.6);
+    display: flex;
+    flex-direction: column;
+    padding: 28px 32px 24px;
+    position: relative;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: #f0f6fc;
+  }
+  .header h1 span { color: #58a6ff; }
+  .header .badge {
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: #1f2937;
+    color: #8b949e;
+    border: 1px solid #30363d;
+  }
+  .header .badge em { color: #f0883e; font-style: normal; }
+
+  /* ── Graph area ── */
+  .graph {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+
+  /* ── SVG connections layer ── */
+  #connections {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* ── Nodes container ── */
+  .nodes {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+  }
+
+  /* ── Signal Node ── */
+  .node {
+    position: absolute;
+    width: 200px;
+    padding: 18px 20px 16px;
+    border-radius: 14px;
+    background: #1c2333;
+    border: 1px solid #30363d;
+    box-shadow: 0 4px 12px rgba(0,0,0,.35);
+    transition: border-color .3s, box-shadow .3s, transform .15s;
+    cursor: default;
+  }
+  .node:hover {
+    border-color: #58a6ff55;
+    box-shadow: 0 4px 20px rgba(88,166,255,.12);
+  }
+
+  .node .label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .node .name {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    background: #212d4a;
+    color: #58a6ff;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    flex-shrink: 0;
+  }
+  .node.source .name { background: #2d2a1e; color: #f0c33c; }
+  .node.derived .name { background: #212d4a; color: #58a6ff; }
+
+  .node .formula {
+    font-size: 12px;
+    color: #8b949e;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    background: #0d1117;
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid #21262d;
+  }
+
+  .node .value-display {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .node .value {
+    font-size: 28px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: #f0f6fc;
+    transition: color .2s;
+    line-height: 1.2;
+  }
+  .node .value.pulse {
+    animation: pulseVal .45s ease-out;
+  }
+  @keyframes pulseVal {
+    0%   { color: #58a6ff; transform: scale(1.15); }
+    100% { color: #f0f6fc; transform: scale(1); }
+  }
+  .node.source .value.pulse { animation-name: pulseValSrc; }
+  @keyframes pulseValSrc {
+    0%   { color: #f0c33c; transform: scale(1.15); }
+    100% { color: #f0f6fc; transform: scale(1); }
+  }
+
+  .node .type-tag {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .node.source .type-tag { background: #2d2a1e; color: #d29922; }
+  .node.derived .type-tag { background: #1c2a41; color: #58a6ff; }
+
+  /* bar visual */
+  .bar-wrap {
+    margin-top: 10px;
+    height: 4px;
+    background: #0d1117;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-wrap .bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width .4s ease, background .4s ease;
+    width: 0%;
+  }
+  .node.source .bar { background: linear-gradient(90deg, #d29922, #f0c33c); }
+  .node.derived .bar { background: linear-gradient(90deg, #1f6feb, #58a6ff); }
+
+  /* ── Node positions (responsive-ish via % + transform) ── */
+  .node-a {
+    left: 50%;
+    top: 5%;
+    transform: translateX(-50%);
+  }
+  .node-b {
+    left: 5%;
+    bottom: 8%;
+    transform: translateX(0);
+  }
+  .node-c {
+    right: 5%;
+    bottom: 8%;
+    transform: translateX(0);
+  }
+  .node-d {
+    left: 50%;
+    bottom: 38%;
+    transform: translateX(-50%);
+  }
+
+  /* ── Controls ── */
+  .controls {
+    flex-shrink: 0;
+    margin-top: 12px;
+    padding: 16px 20px;
+    background: #0d1117;
+    border-radius: 12px;
+    border: 1px solid #21262d;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .controls label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #c9d1d9;
+    white-space: nowrap;
+  }
+  .controls label b { color: #f0c33c; }
+  .controls input[type="range"] {
+    flex: 1;
+    min-width: 120px;
+    accent-color: #f0c33c;
+    height: 6px;
+    cursor: pointer;
+  }
+  .controls .val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #f0c33c;
+    min-width: 36px;
+    text-align: center;
+  }
+  .controls .reset-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background .2s;
+    font-weight: 500;
+  }
+  .controls .reset-btn:hover { background: #30363d; }
+
+  .controls .legend {
+    display: flex;
+    gap: 14px;
+    margin-left: auto;
+    font-size: 11px;
+  }
+  .controls .legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .controls .legend-dot.src { background: #f0c33c; }
+  .controls .legend-dot.der { background: #58a6ff; }
+
+  /* ── Tooltip / status ── */
+  .status {
+    font-size: 11px;
+    color: #8b949e;
+    text-align: center;
+    margin-top: 8px;
+    flex-shrink: 0;
+  }
+  .status .hl { color: #58a6ff; }
+
+  /* ── Responsive tweaks ── */
+  @media (max-width: 700px) {
+    .app { padding: 16px; max-width: 100vw; border-radius: 0; }
+    .node { width: 150px; padding: 12px 14px; }
+    .node .value { font-size: 22px; }
+    .node .formula { font-size: 10px; }
+    .node-a { left: 50%; top: 3%; }
+    .node-b { left: 3%; bottom: 12%; }
+    .node-c { right: 3%; bottom: 12%; }
+    .graph { overflow: auto; }
+    .controls { flex-direction: column; align-items: stretch; gap: 10px; }
+    .controls .legend { margin-left: 0; justify-content: center; }
+  }
+
+  @media (max-width: 480px) {
+    body { overflow: auto; -webkit-overflow-scrolling: touch; }
+    .app { padding: 12px; height: auto; min-height: 100vh; }
+    .graph { overflow: visible; min-height: 400px; }
+    .nodes { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0; }
+    .node { position: relative; width: 100%; max-width: 280px; padding: 10px 12px; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; }
+    .node .value { font-size: 20px; }
+    .node .formula { font-size: 10px; }
+    #connections { display: none; }
+    .controls { padding: 12px 14px; gap: 8px; }
+    .controls input[type="range"] { min-width: 80px; }
+    .status { font-size: 10px; }
+    button { min-height: 40px; min-width: 40px; }
+    button:active { transform: scale(0.95); }
+    * { -webkit-tap-highlight-color: transparent; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>⚡ <span>signals</span> · reactive graph</h1>
+    <div class="badge">dependency propagation · <em>live</em></div>
+  </div>
+
+  <!-- Graph area -->
+  <div class="graph" id="graph">
+    <svg id="connections"></svg>
+    <div class="nodes" id="nodes">
+      <!-- Node A (source) -->
+      <div class="node node-a source" data-id="A">
+        <div class="label">
+          <span class="name">A</span>
+          <span class="type-tag">source</span>
+        </div>
+        <div class="formula">= 5</div>
+        <div class="value-display">
+          <span class="value" id="val-A">5</span>
+        </div>
+        <div class="bar-wrap"><div class="bar" id="bar-A" style="width:25%"></div></div>
+      </div>
+
+      <!-- Node B (derived: A * 2) -->
+      <div class="node node-b derived" data-id="B">
+        <div class="label">
+          <span class="name">B</span>
+          <span class="type-tag">derived</span>
+        </div>
+        <div class="formula">A × 2</div>
+        <div class="value-display">
+          <span class="value" id="val-B">10</span>
+        </div>
+        <div class="bar-wrap"><div class="bar" id="bar-B" style="width:50%"></div></div>
+      </div>
+
+      <!-- Node C (derived: A + B) -->
+      <div class="node node-c derived" data-id="C">
+        <div class="label">
+          <span class="name">C</span>
+          <span class="type-tag">derived</span>
+        </div>
+        <div class="formula">A + B</div>
+        <div class="value-display">
+          <span class="value" id="val-C">15</span>
+        </div>
+        <div class="bar-wrap"><div class="bar" id="bar-C" style="width:75%"></div></div>
+      </div>
+
+      <!-- Node D (derived: C * 2) -->
+      <div class="node node-d derived" data-id="D">
+        <div class="label">
+          <span class="name">D</span>
+          <span class="type-tag">derived</span>
+        </div>
+        <div class="formula">C × 2</div>
+        <div class="value-display">
+          <span class="value" id="val-D">30</span>
+        </div>
+        <div class="bar-wrap"><div class="bar" id="bar-D" style="width:90%"></div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label>Signal <b>A</b></label>
+    <input type="range" id="slider" min="0" max="20" step="1" value="5">
+    <span class="val" id="slider-val">5</span>
+    <button class="reset-btn" id="reset">↺ reset</button>
+    <div class="legend">
+      <span><span class="legend-dot src"></span>source</span>
+      <span><span class="legend-dot der"></span>derived</span>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status">
+    <span class="hl">↓</span> drag the slider to change <b>A</b> — <span class="hl">B</span>, <span class="hl">C</span> &amp; <span class="hl">D</span> update reactively
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  /* ── Signal engine ── */
+
+  // dependency graph: node → list of dependent fns
+  const graph = {};
+  // current values
+  const values = {};
+  // notify queue
+  let notifyQueue = [];
+
+  function signal(name, initial, compute) {
+    values[name] = initial;
+    if (!graph[name]) graph[name] = [];
+    if (compute) {
+      // derived signal: register as dependent of its deps
+      const deps = compute.deps || [];
+      deps.forEach(d => {
+        if (!graph[d]) graph[d] = [];
+        graph[d].push(() => {
+          const newVal = compute.fn();
+          if (newVal !== values[name]) {
+            values[name] = newVal;
+            notifyQueue.push(name);
+          }
+        });
+      });
+      // run initial
+      values[name] = compute.fn();
+    }
+    return name;
+  }
+
+  function setSignal(name, val) {
+    if (values[name] === val) return;
+    values[name] = val;
+    notifyQueue.push(name);
+    drainQueue();
+  }
+
+  function drainQueue() {
+    const seen = new Set();
+    while (notifyQueue.length) {
+      const changed = notifyQueue.shift();
+      if (seen.has(changed)) continue;
+      seen.add(changed);
+      const deps = graph[changed] || [];
+      // snapshot deps to avoid infinite loops
+      [...deps].forEach(fn => fn());
+    }
+  }
+
+  /* ── Build reactive system ── */
+
+  signal('A', 5);
+  signal('B', 10, {
+    deps: ['A'],
+    fn: () => values.A * 2
+  });
+  signal('C', 15, {
+    deps: ['A', 'B'],
+    fn: () => values.A + values.B
+  });
+  signal('D', 30, {
+    deps: ['C'],
+    fn: () => values.C * 2
+  });
+
+  // initial values from engine (ensure consistency)
+  values.B = values.A * 2;
+  values.C = values.A + values.B;
+  values.D = values.C * 2;
+
+  /* ── DOM refs ── */
+  const elVal = {
+    A: document.getElementById('val-A'),
+    B: document.getElementById('val-B'),
+    C: document.getElementById('val-C'),
+    D: document.getElementById('val-D')
+  };
+  const elBar = {
+    A: document.getElementById('bar-A'),
+    B: document.getElementById('bar-B'),
+    C: document.getElementById('bar-C'),
+    D: document.getElementById('bar-D')
+  };
+  const slider = document.getElementById('slider');
+  const sliderVal = document.getElementById('slider-val');
+
+  /* ── SVG connection lines ── */
+  const svg = document.getElementById('connections');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // node anchor points (relative to graph container) – will be computed from DOM
+  const anchors = {
+    A: { output: 'bottom' },
+    B: { input: 'top', output: 'right' },
+    C: { input: 'top', output: 'right' },
+    D: { input: 'top', output: 'right' }
+  };
+
+  const edges = [
+    { from: 'A', to: 'B' },
+    { from: 'A', to: 'C' },
+    { from: 'B', to: 'C' },
+    { from: 'C', to: 'D' }
+  ];
+
+  let arrowDefs = null;
+
+  function buildArrows() {
+    // clear
+    svg.innerHTML = '';
+    arrowDefs = document.createElementNS(NS, 'defs');
+    svg.appendChild(arrowDefs);
+
+    // arrowhead marker
+    const marker = document.createElementNS(NS, 'marker');
+    marker.setAttribute('id', 'arrowhead');
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('refX', '9');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('orient', 'auto');
+    marker.innerHTML = '<polygon points="0 0, 10 3, 0 6" fill="#58a6ff" opacity="0.5"/>';
+    arrowDefs.appendChild(marker);
+
+    // glow defs
+    edges.forEach((e, i) => {
+      const glowId = `glow-${e.from}-${e.to}`;
+      const filter = document.createElementNS(NS, 'filter');
+      filter.setAttribute('id', glowId);
+      filter.setAttribute('x', '-20%');
+      filter.setAttribute('y', '-20%');
+      filter.setAttribute('width', '140%');
+      filter.setAttribute('height', '140%');
+      filter.innerHTML = `
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feMerge>
+          <feMergeNode in="blur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      `;
+      arrowDefs.appendChild(filter);
+
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('id', `edge-${e.from}-${e.to}`);
+      path.setAttribute('data-edge', `${e.from}→${e.to}`);
+      path.setAttribute('stroke', '#58a6ff');
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke-opacity', '0.35');
+      path.setAttribute('filter', `url(#${glowId})`);
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+      svg.appendChild(path);
+    });
+  }
+
+  function getNodeCenter(id) {
+    const nodeEl = document.querySelector(`.node[data-id="${id}"]`);
+    if (!nodeEl) return { x: 0, y: 0, w: 0, h: 0 };
+    const graphRect = document.getElementById('graph').getBoundingClientRect();
+    const rect = nodeEl.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width/2 - graphRect.left,
+      y: rect.top + rect.height/2 - graphRect.top,
+      w: rect.width,
+      h: rect.height
+    };
+  }
+
+  function updateEdges() {
+    const gRect = document.getElementById('graph').getBoundingClientRect();
+    edges.forEach(e => {
+      const fromEl = document.querySelector(`.node[data-id="${e.from}"]`);
+      const toEl   = document.querySelector(`.node[data-id="${e.to}"]`);
+      if (!fromEl || !toEl) return;
+
+      const fr = fromEl.getBoundingClientRect();
+      const tr = toEl.getBoundingClientRect();
+
+      // calculate connection points
+      let x1, y1, x2, y2;
+
+      // from: bottom of source
+      x1 = fr.left + fr.width/2 - gRect.left;
+      y1 = fr.bottom - gRect.top;
+
+      // to: top of target
+      x2 = tr.left + tr.width/2 - gRect.left;
+      y2 = tr.top - gRect.top;
+
+      // slight offset for B and C to avoid overlap when both come from A
+      if (e.from === 'A' && e.to === 'B') {
+        x1 -= 4;
+        x2 -= 4;
+      }
+      if (e.from === 'A' && e.to === 'C') {
+        x1 += 4;
+        x2 += 4;
+      }
+      if (e.from === 'B' && e.to === 'C') {
+        x2 -= 4;
+        y2 -= 2;
+      }
+
+      // bezier curve
+      const cx1 = x1;
+      const cy1 = y1 + (y2 - y1) * 0.4;
+      const cx2 = x2;
+      const cy2 = y2 - (y2 - y1) * 0.4;
+
+      const path = document.getElementById(`edge-${e.from}-${e.to}`);
+      if (path) {
+        path.setAttribute('d', `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`);
+      }
+    });
+  }
+
+  /* ── Update display ── */
+  const MAX_BAR = 60; // A can go up to 20, D up to 80
+
+  function updateDisplay(changed) {
+    const names = changed || Object.keys(values);
+    names.forEach(name => {
+      const v = values[name];
+      if (elVal[name]) {
+        elVal[name].textContent = v;
+        // pulse animation
+        elVal[name].classList.remove('pulse');
+        // force reflow
+        void elVal[name].offsetWidth;
+        elVal[name].classList.add('pulse');
+      }
+      if (elBar[name]) {
+        const pct = Math.min(100, (v / MAX_BAR) * 100);
+        elBar[name].style.width = pct + '%';
+      }
+    });
+    updateEdges();
+  }
+
+  /* ── Slider → Signal A ── */
+  slider.addEventListener('input', () => {
+    const v = parseInt(slider.value, 10);
+    sliderVal.textContent = v;
+    setSignal('A', v);
+    updateDisplay(['A', 'B', 'C', 'D']);
+  });
+
+  /* ── Reset ── */
+  document.getElementById('reset').addEventListener('click', () => {
+    slider.value = 5;
+    sliderVal.textContent = '5';
+    setSignal('A', 5);
+    updateDisplay(['A', 'B', 'C', 'D']);
+  });
+
+  /* ── Resize handler ── */
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateEdges, 50);
+  });
+
+  /* ── Init ── */
+  buildArrows();
+  updateDisplay(['A', 'B', 'C', 'D']);
+
+  // re-run edges after layout settles
+  setTimeout(updateEdges, 100);
+  setTimeout(updateEdges, 400);
+
+})();
+</script>
+</body>
+</html>

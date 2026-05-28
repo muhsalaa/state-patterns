@@ -1,0 +1,102 @@
+---
+title: Unidirectional Data Flow
+description: Data flows down through the component tree, events flow back up. React's default model and how it differs from two-way binding.
+---
+
+Unidirectional data flow means state moves in one direction through your component tree. Parent components pass data to children via props. When a child needs to change something, it calls a callback function that the parent supplied — the parent owns the state, the child signals a request. React enforces this pattern at the framework level: props are read-only within the receiving component.
+
+```tsx
+// Parent owns the state and provides both the value and a callback
+function Parent() {
+  const [count, setCount] = useState(0)
+
+  return (
+    <Child
+      value={count}
+      onIncrement={() => setCount(c => c + 1)}
+    />
+  )
+}
+```
+
+The child receives the value as a read-only prop and the callback as an event channel.
+
+```tsx
+// Child consumes props — it never mutates state directly
+function Child({ value, onIncrement }: {
+  value: number
+  onIncrement: () => void
+}) {
+  return (
+    <button onClick={onIncrement}>
+      {value}
+    </button>
+  )
+}
+```
+
+The pattern traces back to Flux, Facebook's application architecture from 2014. React adopted the store → view → action → dispatcher loop, then simplified it into props and callbacks. Every update follows the same path: an event starts in the child, travels up to the state owner, the state updates, and the new value flows back down.
+
+### How it differs from two-way binding
+
+In two-way binding (Angular's `[(ngModel)]`, Vue's `v-model`), a directive binds a variable in both directions simultaneously. The input field reads the value and writes back to it in one declaration. In React, you write both halves explicitly: `value={x}` for the read direction and `onChange={e => setX(e.target.value)}` for the write direction. React calls this "controlled components."
+
+```tsx
+// Two-way binding (Vue)
+<input v-model="name" />
+
+// Unidirectional equivalent (React)
+<input
+  value={name}
+  onChange={e => setName(e.target.value)}
+/>
+```
+
+:::note
+Explicit two-way binding is not the same as unidirectional data flow. In React, data still moves in one direction — the `onChange` handler is the event flowing up, `value` is the data flowing down. They just happen to sit on the same JSX line.
+:::
+
+### When unidirectional flow helps
+
+Predictability is the main argument. Because data enters a component through a single channel (props or hooks), tracing where a value came from is mechanical: follow the prop chain up. Debugging tools like React DevTools show the exact prop values at every level. State mutations happen inside setter functions or reducers, not scattered across the tree.
+
+### The trade-off
+
+Deep component trees expose the weakness. A button nested five levels down that needs to update state at the top requires passing a callback through every intermediate component — even ones that do nothing with it. This "prop drilling" adds boilerplate and makes refactoring harder. Context APIs and state libraries exist partly to solve this.
+
+```tsx
+// Prop drilling: Button needs to update App state
+function App() {
+  const [theme, setTheme] = useState('light')
+  return <Page theme={theme} onThemeChange={setTheme} />
+}
+function Page({ theme, onThemeChange }: Props) {
+  return <Toolbar theme={theme} onThemeChange={onThemeChange} />
+}
+function Toolbar({ theme, onThemeChange }: Props) {
+  return <Button theme={theme} onThemeChange={onThemeChange} />
+}
+function Button({ theme, onThemeChange }: Props) {
+  return <button onClick={() => onThemeChange('dark')}>{theme}</button>
+}
+```
+
+:::caution
+Context and state libraries hide prop drilling, not eliminate it. The data still flows unidirectionally — you've just changed the transport mechanism.
+:::
+
+For applications with straightforward nesting (two or three levels), plain props and callbacks remain the clearest option.
+
+## Try it yourself
+
+<iframe title="Interactive unidirectional data flow diagram — props flow down, events flow up" src="/visualizers/unidirectional-flow.html" width="100%" height="700" style="border: none; border-radius: 8px; background: #0d1117; max-width: 100%;"></iframe>
+
+<a href="/visualizers/unidirectional-flow.html" target="_blank" style="display: inline-block; margin-top: 0.5rem; color: var(--sl-color-text-accent);">Open full screen ↗</a> 
+
+## References
+
+- [React docs: Thinking in React](https://react.dev/learn/thinking-in-react) by React Team — foundational guide to React's mental model
+- [React docs: Passing Props to a Component](https://react.dev/learn/passing-props-to-a-component) by React Team — how props flow down the component tree
+- [React docs: Responding to Events](https://react.dev/learn/responding-to-events) by React Team — how events flow up via callbacks
+- [Facebook Flux architecture](https://facebookarchive.github.io/flux/) by Facebook — the original unidirectional data flow architecture
+- [Wikipedia: Data flow](https://en.wikipedia.org/wiki/Data-flow_analysis) by Wikipedia — general concept of data flow in computing

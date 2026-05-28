@@ -1,0 +1,90 @@
+---
+title: Finite State Machines in UI
+description: Modeling UI behavior with explicit states and transitions using XState and statecharts.
+---
+
+A finite state machine (FSM) models a system that can only be in one state at a time. Transitions between states happen in response to events. For certain UI problems — multi-step wizards, authentication flows, data fetching with loading/error/success — this constraint maps directly onto what you'd otherwise manage with boolean flags and if-else chains.
+
+```tsx
+const { state, send } = useMachine({
+  initial: 'idle',
+  states: {
+    idle:    { on: { FETCH: 'loading' } },
+    loading: { on: { SUCCESS: 'success', ERROR: 'error' } },
+    success: { on: { REFETCH: 'loading' } },
+    error:   { on: { RETRY: 'loading' } },
+  },
+})
+```
+
+Instead of tracking `isLoading`, `isError`, `hasData`, and writing logic for every combination of these booleans, you declare the legal transitions. Illegal transitions (like going from `idle` straight to `success`) are structurally impossible.
+
+## XState and Statecharts
+
+XState extends the basic FSM idea with statecharts — hierarchical (nested) states, parallel states, guards, actions, and context (extended state). A single flat FSM works for small flows. A signup form with email verification, password reset, and OAuth linking demands hierarchy.
+
+```tsx
+const signupMachine = createMachine({
+  initial: 'idle',
+  states: {
+    idle: { on: { SUBMIT: 'validating' } },
+    validating: {
+      initial: 'local',
+      states: {
+        local: { on: { PASS: 'done', FAIL: '#error' } },
+        server: { on: { PASS: 'done', FAIL: '#error' } },
+      },
+    },
+  },
+})
+```
+
+The nested `validating` state has its own sub-states (`local` → `server`). The parent machine sees `validating` as a single state. This keeps the top-level diagram readable while the sub-machine handles internal detail.
+
+## When to Reach for State Machines
+
+FSMs shine when UI behavior has discrete modes with strict ordering. A wizard with step 1 → step 2 → step 3 is a natural fit. So is a real-time connection (connecting → connected → disconnected → reconnecting).
+
+They're overkill for a toggle button or a dropdown menu. `useState` handles those fine. The cost of setting up a machine (defining states, events, transitions explicitly) pays off when the alternative is managing five booleans whose valid combinations are hard to reason about.
+
+## The Actor Model
+
+XState version 5 introduced a built-in actor model. Each machine runs as an actor — an isolated process that communicates with other actors via events.
+
+```tsx
+import { createActor, fromTransition } from 'xstate'
+
+const countActor = fromTransition(
+  (state, event) => {
+    if (event.type === 'INC') return state + 1
+    if (event.type === 'DEC') return state - 1
+    return state
+  },
+  0
+)
+
+const actor = createActor(countActor)
+actor.subscribe((state) => console.log(state))
+actor.start()
+actor.send({ type: 'INC' })
+```
+
+Actors can spawn child actors, send them events, and react to their outputs. This maps to UI structure naturally — a parent orchestrator component spawns child actors for individual widgets, each running its own machine independently.
+
+## Visualizing States
+
+One advantage of explicit state definitions: you can render the machine as a diagram. XState's visualizer ([stately.ai/viz](https://stately.ai/viz)) takes a machine definition and draws the state-transition graph. This makes the behavior reviewable by non-developers — product managers and designers can look at a diagram and confirm the flow before any UI code exists.
+
+## Try it yourself
+
+<iframe title="Interactive finite state machine — click buttons to trigger transitions" src="/visualizers/fsm.html" width="100%" height="650" style="border: none; border-radius: 8px; background: #0d1117; max-width: 100%;"></iframe>
+
+<a href="/visualizers/fsm.html" target="_blank" style="display: inline-block; margin-top: 0.5rem; color: var(--sl-color-text-accent);">Open full screen ↗</a> 
+
+## References
+
+- [XState documentation](https://stately.ai/docs) by Stately — XState state machine library
+- [David Khourshid - "State Machines in React" (2021)](https://www.youtube.com/watch?v=VU90K2GkY1k) by David Khourshid — state machines in React talk
+- [Stately Visualizer](https://stately.ai/viz) by Stately — visualize and design state machines
+- [XState v5 actor model docs](https://stately.ai/docs/actors) by XState — actor model in XState
+- [Statecharts specification (SCXML)](https://www.w3.org/TR/scxml/) by W3C — W3C state machine specification

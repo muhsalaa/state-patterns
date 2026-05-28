@@ -1,0 +1,66 @@
+---
+title: What is State?
+description: Understanding the different types of state in React applications.
+---
+
+In React, "state" is any data that changes over time and affects what your UI renders. But not all state is the same. There are a few distinct categories, and picking the wrong container for your data is where most state management problems start.
+
+### Local State
+
+State that belongs to a single component. Managed with `useState` or `useReducer`.
+
+```tsx
+const [count, setCount] = useState(0)
+const [form, dispatch] = useReducer(formReducer, initialState)
+```
+
+Use this for UI toggles, form inputs, counters — anything only one component cares about.
+
+### Derived State
+
+State computed from existing state. No storage needed — it's calculated on the fly.
+
+```tsx
+const todos = useStore(state => state.todos)
+const completedCount = todos.filter(t => t.done).length
+```
+
+Use this for filtered lists, computed totals, status flags. Deriving is almost always cheaper than storing and syncing.
+
+### Server State
+
+Data fetched from an API. The server owns the truth; your UI keeps a local cache.
+
+```tsx
+const { data, isLoading } = useQuery({
+  queryKey: ['posts'],
+  queryFn: () => fetch('/api/posts').then(r => r.json()),
+})
+```
+
+Use this for API data that multiple components read, needs caching, refetching, or optimistic updates.
+
+### URL State
+
+State encoded in the URL — search params, path segments, hash.
+
+```tsx
+const [searchParams, setSearchParams] = useSearchParams()
+const page = searchParams.get('page') ?? '1'
+```
+
+Use this for shareable or persistent state — pagination, filters, selected item.
+
+---
+
+## State Matrix
+
+- **Local** — Component unmounts → Single component → `useState`
+- **Derived** — Re-computed on dependency change → Component tree → `useMemo`
+- **Server** — Cache + network → App-wide → TanStack Query
+- **URL** — Browser navigation → Route → React Router
+
+## References
+- [React docs: useState](https://react.dev/reference/react/useState) by React Team — API reference for the useState hook
+- [React docs: useMemo](https://react.dev/reference/react/useMemo) by React Team — API reference for memoization
+- [Dan Abramov: Just Enough React State Management](https://www.youtube.com/watch?v=ZzHslRfkCjU) by Dan Abramov — talk on state management fundamentals

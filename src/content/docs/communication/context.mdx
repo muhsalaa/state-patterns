@@ -1,0 +1,119 @@
+---
+title: React Context
+description: Using React Context API for state that many components need — Provider pattern, useContext hook, and performance trade-offs.
+---
+
+React Context lets a component provide data to every descendant in its subtree without passing props through intermediate components. It's the built-in escape hatch from props drilling.
+
+## The Provider pattern
+
+A context consists of a provider component and a consumer mechanism. The provider wraps the subtree and holds a value. Any component under it can read that value directly.
+
+```tsx
+import { createContext, useContext } from 'react'
+
+type Theme = 'light' | 'dark'
+const ThemeContext = createContext<Theme>('light')
+
+function App() {
+  const [theme, setTheme] = useState<Theme>('light')
+  return (
+    <ThemeContext.Provider value={theme}>
+      <Layout />
+    </ThemeContext.Provider>
+  )
+}
+
+function ThemedButton() {
+  const theme = useContext(ThemeContext)
+  return <button className={`btn-${theme}`}>Click me</button>
+}
+```
+
+The `ThemeContext.Provider` makes the theme value available to `Layout`, its children, and every component deeper in the tree. No prop declarations needed.
+
+## When to use context
+
+Context fits data that many components need at different levels of the tree.
+
+- **Themes** — light/dark mode used by buttons, cards, modals, text.
+- **Locale** — current language for internationalized strings.
+- **Auth state** — current user, login status, token.
+- **Routing** — current URL, navigation functions (React Router uses context).
+- **Feature flags** — which features are enabled.
+
+These are global concerns in the sense that they apply widely, but they don't have to be truly app-wide. You can scope a context to a subtree. A settings page might have its own `SettingsContext` that only settings-related components read.
+
+## When to avoid context
+
+Context is not a replacement for props. Two common mistakes:
+
+**Using context for state that only one or two components need.** If a single leaf component needs a piece of data, pass it as a prop. Adding a context provider to avoid one level of drilling adds re-render overhead across the entire subtree.
+
+**Merging unrelated state into a single context.** A context that holds theme, user, notifications, and sidebar visibility forces every consumer to re-render when any of these values changes, even if they only read one field.
+
+```tsx
+// Bad — everything in one context
+const AppContext = createContext<{
+  theme: Theme
+  user: User | null
+  notifications: Notification[]
+}>(...)
+```
+
+Split independent concerns into separate contexts. Theme changes shouldn't re-render notification badges.
+
+```tsx
+const ThemeContext = createContext<Theme>('light')
+const UserContext = createContext<User | null>(null)
+const NotificationContext = createContext<Notification[]>([])
+```
+
+## Performance implications
+
+Context has a specific performance characteristic that surprises many developers: when a provider's value changes, **every consumer** of that context re-renders, regardless of whether the consumer's part of the value actually changed.
+
+```tsx
+const UserContext = createContext({ name: '', avatar: '', status: '' })
+
+function Avatar() {
+  const user = useContext(UserContext)
+  return <img src={user.avatar} alt={user.name} />
+}
+
+function StatusBadge() {
+  const user = useContext(UserContext)
+  return <span>{user.status}</span>
+}
+```
+
+If `user.name` changes, both `Avatar` and `StatusBadge` re-render. Neither reads `name`, but both consume the same context object.
+
+:::note
+React does not provide a selector-like API out of the box for context. Libraries like Zustand, Jotai, or Recoil give you fine-grained subscriptions that context alone cannot match.
+:::
+
+If the re-render cost is measurable, three options exist:
+
+1. **Split the context** — smaller contexts per concern.
+2. **Memoize the provider value** — avoid creating a new object reference on every render.
+3. **Use a different pattern** — composition avoids context entirely, and libraries like Zustand provide selector-based subscriptions.
+
+```tsx
+function App() {
+  // Creating a new object every render causes unnecessary re-renders
+  const value = useMemo(() => ({ theme, user }), [theme, user])
+  return (
+    <AppContext.Provider value={value}>
+      <Layout />
+    </AppContext.Provider>
+  )
+}
+```
+
+## References
+
+- [React docs: Passing data deeply with context](https://react.dev/learn/passing-data-deeply-with-context) by React Team — provider pattern and context basics
+- [React docs: useContext hook reference](https://react.dev/reference/react/useContext) by React Team — API reference for useContext
+- [React docs: createContext reference](https://react.dev/reference/react/createContext) by React Team — API reference for createContext
+- [React docs: When to use context vs props](https://react.dev/learn/passing-data-deeply-with-context#before-you-use-context) by React Team — guidance on choosing context over props

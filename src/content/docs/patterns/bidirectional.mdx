@@ -1,0 +1,88 @@
+---
+title: Two-Way Binding
+description: Synchronizing state between a component and its children in both directions. ngModel, Vue v-model, and React controlled components.
+---
+
+Two-way binding connects a state variable to a UI control so that changes in either direction are reflected in the other. Modify the variable, the input updates. Type in the input, the variable updates. The binding handles both directions under a single declaration.
+
+### Framework implementations
+
+Angular's `[(ngModel)]` is the canonical example. The `[()]` syntax, sometimes called "banana in a box," desugars into a property binding and an event binding:
+
+```html
+<!-- Angular two-way binding -->
+<input [(ngModel)]="name" />
+
+<!-- Desugars to -->
+<input [value]="name" (ngModelChange)="name = $event" />
+```
+
+Vue's `v-model` works the same way. On text inputs it binds `value` and listens for `input`. On checkboxes it binds `checked` and listens for `change`.
+
+```vue
+<!-- Vue two-way binding -->
+<input v-model="name" />
+
+<!-- Custom component -->
+<CustomInput v-model="search" />
+```
+
+Vue 3 lets components accept `v-model` by receiving `modelValue` as a prop and emitting `update:modelValue`.
+
+```vue
+<!-- CustomInput.vue -->
+<script setup>
+defineProps(['modelValue'])
+defineEmits(['update:modelValue'])
+</script>
+
+<template>
+  <input
+    :value="modelValue"
+    @input="$emit('update:modelValue', $event.target.value)"
+  />
+</template>
+```
+
+### React's approach to two-way sync
+
+React does not have a built-in two-way binding directive. You write the same behavior manually:
+
+```tsx
+function NameInput() {
+  const [name, setName] = useState('')
+
+  return (
+    <input
+      value={name}
+      onChange={e => setName(e.target.value)}
+    />
+  )
+}
+```
+
+Some React patterns compress this into something that looks like two-way binding. The `useSyncExternalStore` hook, for instance, lets a component subscribe to external state and update it — the external store plus the component form a two-way channel. Form libraries like React Hook Form use refs and uncontrolled inputs to avoid the pattern entirely.
+
+### When two-way binding makes sense
+
+Forms and form-like UI controls are the natural fit. A text input, a checkbox, a slider — these are symmetrical by nature: the user sees the current value and can immediately change it. Two-way binding reduces the code you write for these cases by half compared to manual event handling.
+
+Angular's `FormsModule` and Vue's `v-model` make form-heavy applications shorter to write. The trade-off is that the data flow is less explicit — you cannot look at the template and immediately tell which direction a change will travel because the binding does both.
+
+### When it causes problems
+
+Two-way bindings create circular update paths when combined with computed or derived values. If the bound variable goes through a transformation (uppercasing, filtering), the transformed value written back can trigger another transformation. Debugging these loops is harder than debugging unidirectional chains because each mutation looks like it came from the other bound party.
+
+:::tip
+For complex forms, consider whether you need two-way binding at all. Libraries like React Hook Form, Angular Reactive Forms, or Vue composables that separate value and validity into distinct concerns often lead to fewer surprises.
+:::
+
+---
+
+## References
+
+- [React docs: Lifting State Up](https://react.dev/learn/lifting-state-up) by React Team — official guide for sharing state by lifting
+- [Kent C. Dodds: Prop Drilling](https://kentcdodds.com/blog/prop-drilling) by Kent C. Dodds — when prop drilling is fine vs when to avoid it
+- [Zustand docs](https://zustand-demo.pmnd.rs/) by PMNDRS — Zustand demo and documentation
+- [Wikipedia: Data binding](https://en.wikipedia.org/wiki/Data_binding) by Wikipedia — concept of two-way data binding
+- [MobX documentation](https://mobx.js.org/the-gist-of-mobx.html) by Michel Weststrate — MobX's take on bidirectional observable state

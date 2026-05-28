@@ -1,0 +1,133 @@
+/* ─── Dark mode contrast fixes ─── */
+
+/* Gray scale — push lighter for better contrast */
+[data-theme="dark"] {
+  --sl-color-gray-1: hsl(224, 20%, 97%);
+  --sl-color-gray-2: hsl(224, 8%, 85%);
+  --sl-color-gray-3: hsl(224, 7%, 72%);
+  --sl-color-gray-4: hsl(224, 7%, 48%);
+  --sl-color-gray-5: hsl(224, 12%, 32%);
+  --sl-color-gray-6: hsl(224, 14%, 16%);
+
+  /* Text colors — brighter */
+  --sl-color-text: hsl(224, 8%, 92%);
+  --sl-color-text-muted: hsl(224, 6%, 78%);
+  --sl-color-text-subtle: hsl(224, 5%, 68%);
+
+  /* Hairline dividers — brighter */
+  --sl-color-hairline: hsl(224, 12%, 24%);
+  --sl-color-hairline-light: hsl(224, 10%, 30%);
+
+  /* Inline code — brighter */
+  --sl-color-bg-inline-code: hsl(224, 14%, 24%);
+}
+
+/* Card paragraphs and secondary text */
+[data-theme="dark"] .card p,
+[data-theme="dark"] main > section p,
+[data-theme="dark"] main p {
+  color: hsl(224, 7%, 80%) !important;
+}
+
+/* ─── Sidebar active page highlight ─── */
+[data-theme="dark"] nav[aria-label="Main"] a[aria-current="page"] {
+  background: hsl(224, 60%, 30%);
+  color: hsl(224, 100%, 92%) !important;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+[data-theme="dark"] nav[aria-label="Main"] a[aria-current="page"]:hover {
+  background: hsl(224, 60%, 35%);
+}
+
+/* Sidebar non-active links */
+[data-theme="dark"] nav[aria-label="Main"] a:not([aria-current="page"]) {
+  color: hsl(224, 6%, 82%);
+}
+
+[data-theme="dark"] nav[aria-label="Main"] a:not([aria-current="page"]):hover {
+  color: hsl(224, 8%, 95%);
+}
+
+/* ─── TOC active section highlight ─── */
+[data-theme="dark"] starlight-toc a[aria-current="true"] {
+  color: hsl(224, 100%, 85%) !important;
+  font-weight: 600;
+}
+
+/* All TOC links */
+[data-theme="dark"] starlight-toc a {
+  color: hsl(224, 8%, 65%);
+}
+
+/* ─── Card grid ─── */
+[data-theme="dark"] .card-grid .card {
+  background: hsl(224, 14%, 16%);
+  border: 1px solid hsl(224, 12%, 24%);
+  border-radius: 8px;
+  padding: 1.25rem;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .card-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.card .sl-heading-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.card .sl-heading-wrapper h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+}
+
+/* ─── Other existing overrides ─── */
+
+/* Visualizer iframes — responsive */
+.content iframe,
+.sl-markdown-content iframe {
+  max-width: 100%;
+  min-height: 400px;
+}
+
+@media (max-width: 640px) {
+  .sl-markdown-content iframe {
+    min-height: 480px;
+  }
+}
+
+/* Heading anchor links */
+[data-theme="dark"] .heading-anchor,
+[data-theme="dark"] a[href^="#"] {
+  color: hsl(224, 8%, 60%) !important;
+}
+
+[data-theme="dark"] .heading-anchor:hover,
+[data-theme="dark"] a[href^="#"]:hover {
+  color: hsl(224, 100%, 88%) !important;
+}
+
+/* Section headers in sidebar */
+[data-theme="dark"] nav[aria-label="Main"] summary,
+[data-theme="dark"] nav[aria-label="Main"] details > span {
+  color: hsl(224, 10%, 95%) !important;
+}
+
+/* Hero description text */
+[data-theme="dark"] main > section > p:first-of-type,
+[data-theme="dark"] main > p:first-of-type {
+  color: hsl(224, 7%, 82%) !important;
+}
+
+/* Search bar */
+[data-theme="dark"] input[type="search"],
+[data-theme="dark"] [class*="search"] {
+  color: hsl(224, 8%, 88%);
+}

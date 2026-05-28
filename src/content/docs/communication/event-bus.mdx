@@ -1,0 +1,107 @@
+---
+title: Event Bus
+description: Using an event bus or pub-sub pattern for decoupled component communication — custom events, mitt, EventEmitter, and when to use them instead of props or context.
+---
+
+An event bus lets components communicate without any direct reference to each other. One component emits an event; another component (anywhere in the app) listens for it. This is the publish-subscribe pattern, and it's the most decoupled form of component communication React offers — because it doesn't use React at all.
+
+## Custom events with the DOM
+
+The browser already has an event system. You can dispatch a custom event on `window` (or any DOM element) and listen for it elsewhere.
+
+```tsx
+// Emitter — dispatches a custom event on the window object
+function ThemeToggle() {
+  function toggle() {
+    window.dispatchEvent(
+      new CustomEvent('theme:toggle', { detail: { theme: 'dark' } })
+    )
+  }
+  return <button onClick={toggle}>Dark mode</button>
+}
+```
+
+The emitter component knows nothing about who listens. It fires the event on `window` and continues.
+
+```tsx
+// Listener — subscribes to the same event, must clean up on unmount
+function StatusBar() {
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      console.log('Theme changed to', e.detail.theme)
+    }
+    window.addEventListener('theme:toggle', handler)
+    return () => window.removeEventListener('theme:toggle', handler)
+  }, [])
+  return <div>Status Bar</div>
+}
+```
+
+No common ancestor needed. No provider wrapping the tree. The emitter and listener can be anywhere in the component hierarchy — or even outside React entirely.
+
+## Event bus libraries
+
+For more structure, libraries like [mitt](https://github.com/developit/mitt) provide a typed event bus in under 200 bytes.
+
+```tsx
+import mitt from 'mitt'
+
+type Events = {
+  'theme:toggle': { theme: string }
+  'user:login': { userId: string }
+  'notification:show': { message: string; type: 'info' | 'error' }
+}
+
+const bus = mitt<Events>()
+
+// Any component can emit
+bus.emit('user:login', { userId: 'abc-123' })
+
+// Any component can listen
+useEffect(() => {
+  bus.on('user:login', ({ userId }) => fetchUserProfile(userId))
+  return () => bus.off('user:login', handler) // cleanup!
+}, [])
+```
+
+Mitt exposes three methods: `on`, `off`, and `emit`. No classes, no instantiation ceremony. Just a typed map of event names to handlers.
+
+The Node.js `EventEmitter` pattern (used by libraries like React Native's `DeviceEventEmitter`) works the same way but with a class API. If you need wildcards or more sophisticated event handling, `eventemitter3` is a popular choice.
+
+## Trade-offs vs context vs props
+
+- **Data flow** — Props: Explicit, one-directional. Context: Implicit, top-down. Event Bus: Fully decoupled.
+- **Traceability** — Props: Call site shows everything. Context: Provider in tree. Event Bus: No caller visibility.
+- **Re-render scope** — Props: Child subtree. Context: All consumers. Event Bus: None (manual control).
+- **Type safety** — Props: Native. Context: Native. Event Bus: Depends on implementation.
+- **Performance cost** — Props: Props that change re-render. Context: All consumers re-render. Event Bus: Listener registration only.
+- **React integration** — Props: Native. Context: Native. Event Bus: Requires manual lifecycle.
+
+The event bus wins on decoupling and re-render avoidance. It loses on traceability — nothing in the source code tells you who emits or listens to a given event. This makes debugging harder as the app grows. An event that five components emit and eight listen to is hard to reason about.
+
+## When to use an event bus
+
+Event buses work well for:
+
+- **Cross-cutting UI events** — toast notifications, global loading states, keyboard shortcuts.
+- **Cross-window communication** — syncing state between browser tabs using `BroadcastChannel` or `storage` events.
+- **Third-party integration** — a script tag in the page that needs to notify your React app about something.
+- **Legacy code interop** — bridging a jQuery plugin or vanilla JS module to React state.
+
+:::caution
+Avoid event buses for core application state. When events replace props for primary data flow, the component hierarchy becomes a mystery — you can't tell which component provides a value by looking at the tree. Reserve event buses for auxiliary concerns.
+:::
+
+## Try it yourself
+
+<iframe title="Interactive event bus pub-sub demo — click components to publish events" src="/visualizers/event-bus.html" width="100%" height="650" style="border: none; border-radius: 8px; background: #0d1117; max-width: 100%;"></iframe>
+
+<a href="/visualizers/event-bus.html" target="_blank" style="display: inline-block; margin-top: 0.5rem; color: var(--sl-color-text-accent);">Open full screen ↗</a>
+
+## References
+
+- [MDN: CustomEvent](https://developer.mozilla.org/en-US/docs/Web/API/CustomEvent) by MDN Contributors — creating and dispatching custom DOM events
+- [MDN: dispatchEvent](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/dispatchEvent) by MDN Contributors — dispatching events to the DOM
+- [mitt — Tiny functional event bus](https://github.com/developit/mitt) by Jason Miller — lightweight typed event emitter
+- [eventemitter3 — High-performance EventEmitter](https://github.com/primus/eventemitter3) by Primus — fast EventEmitter implementation
+- [MDN: BroadcastChannel API](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel) by MDN Contributors — cross-window communication API

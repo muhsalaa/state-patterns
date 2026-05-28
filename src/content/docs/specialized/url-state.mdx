@@ -1,0 +1,87 @@
+---
+title: URL as State Container
+description: Using URL search params, path params, and hash fragments as state — with React Router, Next.js, and deep linking patterns.
+---
+
+The URL is a state container the browser manages for you. It persists across refreshes, survives closing and reopening the tab, and can be shared with another person. For any piece of UI state that should survive navigation or be linkable, the URL is the right storage location.
+
+## URL State Sources
+
+Three places to store state in a URL:
+
+- **Path params** — resource identifiers (`/users/42`, `/repos/facebook/react`)
+- **Search params** — options and filters (`?sort=name&page=2&view=grid`)
+- **Hash fragments** — client-side anchors or state not sent to the server (`#section-3`, `#access_token=...`)
+
+```tsx
+// React Router — reading search params
+const [searchParams, setSearchParams] = useSearchParams()
+const sort = searchParams.get('sort') ?? 'name'
+const page = parseInt(searchParams.get('page') ?? '1')
+
+const nextPage = () => {
+  setSearchParams({ sort, page: String(page + 1) })
+}
+```
+
+Next.js App Router exposes search params through the page props or the `useSearchParams` hook in client components.
+
+```tsx
+// Next.js App Router
+'use client'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+
+export default function ProductsPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const setCategory = (category: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('category', category)
+    router.push(`${pathname}?${params.toString()}`)
+  }
+}
+```
+
+## Deep Linking
+
+A deep link is a URL that restores the exact UI state when navigated to. Search results with applied filters, a specific open tab, a selected item in a sidebar — any of these can be encoded in search params.
+
+```tsx
+// Encode tab state in URL
+const tab = searchParams.get('tab') ?? 'overview'
+const setTab = (t: string) => setSearchParams({ tab: t })
+
+<div>
+  <Tab active={tab === 'overview'} onClick={() => setTab('overview')} />
+  <Tab active={tab === 'settings'} onClick={() => setTab('settings')} />
+</div>
+```
+
+The same URL works for browser history navigation (back/forward), for sharing, and for bookmarking. The alternative — storing the active tab in a `useState` — resets on every page refresh and can't be sent to someone else.
+
+## When URL State Is the Right Answer
+
+URL state fits when the state is:
+- **Shareable** — filters, sort order, selected item, open modal ID
+- **Persistent across sessions** — the user should return to where they left off
+- **Navigation-independent** — data that belongs to a route, not to a component instance
+
+Search params are a good fit for all of these. The URL already contains the route (which page to show) — search params extend that to describe which variant of that page to show.
+
+## When It Adds Complexity
+
+Some state doesn't belong in the URL. Transient UI state — hover states, drag positions, animation progress — has no value when shared and clutters the URL. Writing and reading search params adds overhead that isn't justified for ephemeral state.
+
+Large amounts of data also don't fit. URLs have length limits (around 2048 characters in some browsers) and the string serialization cost adds up. A configuration object with 50 fields should live in `useState` or a store, not in the URL.
+
+Consider also the UX cost. Adding a search param for every interaction floods the browser history. Every `setSearchParams` call pushes a new history entry unless you use `replace` mode, which trades navigability for cleanliness.
+
+## References
+
+- [React Router: useSearchParams](https://reactrouter.com/6.28.0/hooks/use-search-params) by Remix Team — hook for reading/writing URL search params
+- [Next.js search params docs](https://nextjs.org/docs/app/api-reference/functions/use-search-params) by Vercel — Next.js search params API
+- [URL Living Standard (WHATWG)](https://url.spec.whatwg.org/) by WHATWG — URL specification
+- [MDN URLSearchParams API](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) by MDN Contributors — URLSearchParams browser API
+- [MDN Location API](https://developer.mozilla.org/en-US/docs/Web/API/Location) by MDN Contributors — Location browser API

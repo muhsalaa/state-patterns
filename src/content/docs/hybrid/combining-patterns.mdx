@@ -1,0 +1,140 @@
+---
+title: Combining State Patterns
+description: Using Context for theming, Zustand for business state, TanStack Query for server data, and URL state for shareable filters — and how to resolve conflicts between them.
+---
+
+A real application needs more than one state tool. The question is which tool owns which slice of state, and where the boundaries between them live.
+
+Consider a typical app: an e-commerce dashboard, a project management tool, or a social feed. It has authentication, a theme toggle, a product list fetched from an API, search filters that should be shareable, and local UI state for open modals and hover effects. Using `useState` for all of it works up to a point. Past that point you end up threading props through five levels of components or reimplementing caching logic by hand.
+
+Practical apps split state across four categories, each with its own tool.
+
+## The Layered Architecture
+
+The most common pattern in production React apps is a layered state architecture. Each layer handles a distinct type of state and operates independently of the others.
+
+- **UI Layer** — Components, JSX, hooks (e.g., useState, useReducer)
+- **State Layer** — Stores, atoms, signals (e.g., Jotai, Zustand, signals)
+- **Server Layer** — Caching, sync, mutations (e.g., TanStack Query, SWR)
+
+These layers stack rather than compete. A component can read from all four: theme from Context, user profile from TanStack Query, draft edits from Zustand, and current page from the URL.
+
+```tsx
+function ProductsPage() {
+  const { theme } = useTheme()                  // Context
+  const { data: products, isLoading } = useQuery({ // TanStack Query
+    queryKey: ['products'],
+    queryFn: () => fetch('/api/products').then(r => r.json()),
+  })
+  const { filters, setFilter } = useFilterStore() // Zustand
+  const [searchParams, setSearchParams] = useSearchParams() // URL
+  const page = parseInt(searchParams.get('page') ?? '1')
+
+  const filtered = applyFilters(products, filters, page)
+
+  return (
+    <div className={theme === 'dark' ? 'dark' : ''}>
+      {filtered.map(product => <ProductCard key={product.id} />)}
+    </div>
+  )
+}
+```
+
+## Context for Ambient State
+
+React Context works well for values that rarely change and are read by many components — theme, locale, auth status. The API is built into React, no dependencies needed.
+
+Context breaks down as a global store because every consumer re-renders when the context value changes, even if the part they read hasn't changed. For a theme toggle that flips once per user action, the re-render cost is irrelevant. For a store with dozens of fields updating at 60fps, Context is the wrong tool.
+
+:::note
+React 19's `use()` hook and the `useContext` improvements don't change this. Context is for ambient values with coarse granularity, not high-frequency updates.
+:::
+
+## Zustand for Business State
+
+State that is client-owned, shared across unrelated components, and updates frequently belongs in a purpose-built store. Zustand keeps a simple subscribe-notify model: components subscribe to specific slices and re-render only when their slice changes.
+
+```tsx
+const useFilterStore = create((set) => ({
+  filters: { category: 'all', inStock: false },
+  setFilter: (key, value) =>
+    set((state) => ({
+      filters: { ...state.filters, [key]: value },
+    })),
+  clearFilters: () =>
+    set({ filters: { category: 'all', inStock: false } }),
+}))
+```
+
+The filter store doesn't know about the API. It doesn't know about the URL. It holds client-only state — the user's current filter selections — and leaves persistence, synchronization, and serialization to other layers.
+
+## TanStack Query for Server Data
+
+Server state is fundamentally different from client state. It's asynchronous, potentially stale, and shared across sessions. Libraries like TanStack Query handle caching, background refetching, deduplication, and optimistic updates.
+
+```tsx
+const mutation = useMutation({
+  mutationFn: (updatedProduct) =>
+    fetch(`/api/products/${updatedProduct.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updatedProduct),
+    }),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['products'] })
+  },
+})
+```
+
+The rule: if the data lives in a database and arrives over HTTP, it doesn't belong in Zustand or Redux. Server-state libraries already manage deduplication and caching — reimplementing that in a client store duplicates effort and introduces race conditions.
+
+## URL State for Shareable Filters
+
+State that should survive a page refresh or be shared with another person belongs in the URL. Search params handle this naturally.
+
+```tsx
+const toggleCategory = (cat) => {
+  const next = new URLSearchParams(searchParams.toString())
+  next.set('category', cat)
+  setSearchParams(next, { replace: true })
+}
+```
+
+This creates a tension with the Zustand filter store above. Both want to own the same data. The resolution: URL is the source of truth for active filters on page load, and Zustand holds the working copy while the user interacts. When the user applies their selection, Zustand writes back to the URL.
+
+## When Patterns Conflict
+
+Conflicts happen at layer boundaries. Two common ones:
+
+**Context vs prop drilling.** Context should not be the default solution for every prop threading problem. If only two components need the data and they're parent-child, pass props. Context is for when data needs to reach many components at different nesting levels without threading through every intermediate.
+
+**Stores vs URL.** A filter panel writes to Zustand on every keystroke. The URL should only update on actual navigation events (Apply button, debounced input). Synchronizing them bidirectionally causes loops. Pick one source of truth per piece of state.
+
+```tsx
+// One direction: Zustand -> URL (on apply)
+const applyFilters = () => {
+  setSearchParams({
+    category: filters.category,
+    page: '1',
+  })
+}
+
+// The other: URL -> Zustand (on page load)
+useEffect(() => {
+  setFilter('category', searchParams.get('category') ?? 'all')
+}, [])
+```
+
+## Real-World Examples
+
+The Shopify Polaris admin panel uses a layered approach: React Context for theme and navigation, Apollo Client (GraphQL) for server state, URL params for list views, and local component state for UI interactions. The GitHub issue tracker uses the URL as its primary state container for filters, with localStorage for draft content and the GraphQL cache for server data.
+
+The real constraint is simpler: every piece of state must have exactly one owner. The tools you pick matter less than enforcing that rule.
+
+## References
+
+- [TanStack Query docs](https://tanstack.com/query/latest/docs/framework/react/overview) by TanStack — overview of TanStack Query
+- [Zustand docs](https://zustand-demo.pmnd.rs/) by PMNDRS — Zustand store creation
+- [React Context docs](https://react.dev/reference/react/useContext) by React Team — useContext hook reference
+- [React Router: useSearchParams](https://reactrouter.com/6.28.0/hooks/use-search-params) by Remix Team — hook for reading/writing URL search params
+- [TkDodo on separating server and client state](https://tkdodo.eu/blog/practical-react-query#server-state-vs-client-state) by Dominik Dorfmeister — server vs client state in React Query
+- [Shopify Polaris](https://polaris.shopify.com/) by Shopify — design system and component library

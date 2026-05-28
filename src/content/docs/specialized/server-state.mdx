@@ -1,0 +1,85 @@
+---
+title: Server State and Remote Data
+description: Managing API data with TanStack Query, SWR, and RTK Query — caching, invalidation, optimistic updates, and the cache-as-UI pattern.
+---
+
+Server state is data your app doesn't own. It lives in a database somewhere else, arrives over HTTP, and can change without your UI knowing. Client state (`useState`) and server state need different tools because they have different constraints — staleness, refetching, deduplication, background updates.
+
+```tsx
+const { data, error, isLoading } = useQuery({
+  queryKey: ['repos', username],
+  queryFn: () => fetch(`/api/repos/${username}`).then(r => r.json()),
+  staleTime: 1000 * 60 * 5, // 5 minutes
+})
+```
+
+TanStack Query (formerly React Query) treats the cache as the source of truth for UI. When you call `useQuery`, it first returns cached data (if any), then fetches fresh data in the background. The UI never suspends waiting for a network round-trip unless you tell it to.
+
+## Caching and Stale-While-Revalidate
+
+Most server-state libraries use stale-while-revalidate caching. A cached response is served immediately, then the library checks if it's stale and refetches if needed. This is the opposite of how `useState` works — instead of waiting for data to arrive, you show what you have and update when fresh data comes in.
+
+```tsx
+// SWR equivalent
+const { data, error, isLoading } = useSWR(
+  `/api/repos/${username}`,
+  fetcher,
+  { revalidateOnFocus: true, refreshInterval: 30000 }
+)
+```
+
+## Cache Invalidation
+
+The hardest problem in server-state management is knowing when cached data is wrong. After a mutation (POST/PUT/DELETE), the library needs to refetch queries whose results may have changed.
+
+```tsx
+const mutation = useMutation({
+  mutationFn: (newRepo) => fetch('/api/repos', {
+    method: 'POST',
+    body: JSON.stringify(newRepo),
+  }),
+  onSuccess: () => {
+    // Refetch all repo queries
+    queryClient.invalidateQueries({ queryKey: ['repos'] })
+  },
+})
+```
+
+Invalidating everything is safe but wasteful. More precise approaches target specific query keys or use the mutation response to update the cache directly.
+
+## Optimistic Updates
+
+Optimistic updates show the expected result of a mutation before the server confirms it. If the server rejects the mutation, you roll back.
+
+```tsx
+useMutation({
+  mutationFn: updateTodo,
+  onMutate: async (newTodo) => {
+    await queryClient.cancelQueries({ queryKey: ['todos'] })
+    const previous = queryClient.getQueryData(['todos'])
+    queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+    return { previous }
+  },
+  onError: (err, newTodo, context) => {
+    queryClient.setQueryData(['todos'], context.previous)
+  },
+})
+```
+
+The UI feels instant. The trade-off: you're lying to the user for the duration of a network request. When latency is low (sub-100ms) the lie is invisible. When it's high or the server rejects frequently, optimistic updates create confusion.
+
+## Server State vs Client State
+
+Server state is asynchronous, shared, and potentially stale. Client state is synchronous, local, and always accurate. Mixing them — storing API responses in Redux, for example — forces you to reimplement caching, deduplication, and invalidation logic that server-state libraries already handle.
+
+## The Cache-as-UI Pattern
+
+In server-state tools, the cache drives rendering. Components declare what data they need via a query key, and the library provides it — from cache if possible, from the network if not. No prop threading, no global store, no manual synchronization.
+
+## References
+
+- [TanStack Query docs](https://tanstack.com/query/latest/docs/framework/react/overview) by TanStack — React Query server state library
+- [SWR docs](https://swr.vercel.app/docs/getting-started) by Vercel — React Hooks for data fetching
+- [RTK Query overview](https://redux-toolkit.js.org/rtk-query/overview) by Redux Team — data fetching and caching with Redux
+- [TkDodo's blog on React Query](https://tkdodo.eu/blog/practical-react-query) by Dominik Dorfmeister — practical React Query patterns
+- [Stale-while-revalidate (HTTP RFC 5861)](https://datatracker.ietf.org/doc/html/rfc5861) by IETF — HTTP cache extension specification

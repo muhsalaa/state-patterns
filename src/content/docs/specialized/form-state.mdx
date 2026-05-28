@@ -1,0 +1,78 @@
+---
+title: Form State Management
+description: Managing form state with React Hook Form, Formik, controlled vs uncontrolled inputs, and validation strategies.
+---
+
+Forms are the place where state management gets concrete. A form has fields, each with a value, a touched state, an error message, and maybe dirty/clean tracking. Multiply that by dozens of fields and the state surface expands fast.
+
+## Controlled vs Uncontrolled
+
+Controlled inputs store their value in React state and update it on every keystroke. Uncontrolled inputs keep their value in the DOM and let you read it when needed (via `ref` or `FormData`).
+
+```tsx
+// Controlled — value lives in React state
+const [name, setName] = useState('')
+<input value={name} onChange={(e) => setName(e.target.value)} />
+
+// Uncontrolled — value lives in the DOM
+const ref = useRef(null)
+<input ref={ref} defaultValue="" />
+```
+
+Controlled inputs are necessary when other parts of the UI need to react to the current value in real time — character counters, conditional fields, live previews. Uncontrolled inputs perform better at scale because every keystroke doesn't trigger a React render.
+
+## Form Libraries
+
+React Hook Form leans uncontrolled by default. It registers inputs via `ref` and reads values from the DOM only on submission or when you explicitly watch a field.
+
+```tsx
+const { register, handleSubmit, formState: { errors } } = useForm()
+
+<form onSubmit={handleSubmit((data) => console.log(data))}>
+  <input {...register('email', { required: true })} />
+  {errors.email && <span>Email is required</span>}
+</form>
+```
+
+Because inputs aren't re-rendered on every keystroke, large forms stay fast. You opt into reactivity per-field with `watch`.
+
+Formik takes the controlled approach. Every field lives in Formik's internal state and re-renders on change. This is simpler to reason about — your form always knows the current values — but can bog down when a form has many fields.
+
+```tsx
+<Formik initialValues={{ email: '' }} onSubmit={...}>
+  {({ values, errors }) => (
+    <Field name="email" />
+  )}
+</Formik>
+```
+
+## Validation Strategies
+
+Validation can run on every keystroke (`onChange`), on blur (`onBlur`), or on submit (`onSubmit`). React Hook Form defaults to submit-only. This avoids showing errors while the user is still typing. Zod and Yup are common schema validators that pair with both libraries.
+
+```tsx
+const schema = z.object({
+  email: z.string().email(),
+})
+
+const { register, handleSubmit } = useForm({
+  resolver: zodResolver(schema),
+  mode: 'onBlur',
+})
+```
+
+Field-level validation validates one field independently. Form-level validation runs the whole schema each time. Form-level is easier to write (one schema for the whole form) but gets expensive when forms are large — every validation pass validates every field, even if only one changed.
+
+## Performance at Scale
+
+A form with 50+ fields exposes the difference between approaches. React Hook Form keeps the component tree stable because inputs don't re-render on sibling changes. Formik with fast fields (`useFastField`) can mitigate re-renders but the controlled architecture means more renders by nature.
+
+The DOM itself also becomes a bottleneck. Fifty controlled inputs each storing their value in state and re-rendering on every keystroke creates a compounding cost. Uncontrolled inputs sidestep this entirely at the cost of not having real-time access to every value.
+
+## References
+
+- [React Hook Form docs](https://react-hook-form.com/get-started) by React Hook Form — performant form library
+- [Formik docs](https://formik.org/docs/overview) by Formik — form state management library
+- [MDN HTML form guide](https://developer.mozilla.org/en-US/docs/Learn/Forms) by MDN Contributors — HTML forms guide
+- [Zod validation library](https://zod.dev/) by Colin McDonnell — schema validation library
+- [HTML spec: form element](https://html.spec.whatwg.org/multipage/forms.html) by WHATWG — HTML form specification

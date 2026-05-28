@@ -1,0 +1,88 @@
+---
+title: Lifting State Up
+description: The pattern of moving shared state to a common ancestor so sibling components can coordinate.
+---
+
+Two sibling components that need the same state can't share it directly. Props flow down — not sideways. The fix is to lift the shared state into their closest common ancestor and pass it down as props. This is called lifting state up.
+
+```tsx
+function Parent() {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  return (
+    <div>
+      <ItemList onSelect={setSelectedId} />
+      <DetailPanel selectedId={selectedId} />
+    </div>
+  )
+}
+```
+
+`ItemList` and `DetailPanel` don't talk to each other. `Parent` holds the selected item state and sends a callback to `ItemList` (so it can signal selection changes) and the value to `DetailPanel` (so it can render the right content).
+
+## When sibling components need shared state
+
+The most common case is a master-detail layout: a list and a detail view, a filter panel and a results grid, a form and a live preview. Neither component can own the state because the data needs to flow between them.
+
+Another case is coordination — two independent UI elements that must stay in sync. A toggle button and a collapsible panel, or a tab bar and a tab panel. The active tab state lives in the parent, and both children receive it as a prop.
+
+```tsx
+function Tabs() {
+  const [activeTab, setActiveTab] = useState('profile')
+
+  return (
+    <div>
+      <TabBar tabs={['profile', 'settings', 'billing']}
+              activeTab={activeTab}
+              onChange={setActiveTab} />
+      <TabContent tab={activeTab} />
+    </div>
+  )
+}
+```
+
+## Controlled vs uncontrolled components
+
+Lifting state up is directly related to the distinction between controlled and uncontrolled components.
+
+An **uncontrolled component** manages its own state internally. An `<input>` that uses the native DOM to track its value is uncontrolled — you get the value from a ref or form event when you need it.
+
+```tsx
+function UncontrolledInput() {
+  return <input type="text" />
+  // React doesn't control the value; the DOM does
+}
+```
+
+A **controlled component** has its state lifted to a parent and receives both the value and an onChange callback as props. The parent drives every update.
+
+```tsx
+function ControlledInput({ value, onChange }: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+    />
+  )
+}
+```
+
+Controlled components give the parent full control over the data — useful for validation, formatting, or coordinating with other inputs. Uncontrolled components are simpler and perform better when you only need the value on submission.
+
+The React docs recommend controlled components for most form scenarios because they make the data flow explicit. But uncontrolled components (or a mix through `useRef`) are fine when the form grows large and you don't need per-keystroke feedback on every field.
+
+## Trade-offs
+
+Lifting state up keeps the data flow visible. Every prop passing through a component tree is a named, typed argument you can inspect. The downside is that it propagates re-renders. When the parent's state changes, every child that receives that state re-renders, whether or not the data they actually display changed.
+
+For shallow trees and simple state, this is fine. For wide trees with heavy components, you may need `React.memo` or a different strategy like composition or context.
+
+## References
+
+- [React docs: Sharing state between components](https://react.dev/learn/sharing-state-between-components) by React Team — sharing state between components
+- [React docs: Controlled vs uncontrolled components](https://react.dev/learn/sharing-state-between-components#controlled-and-uncontrolled-components) by React Team — controlled and uncontrolled inputs
+- [React docs: Choosing between controlled and uncontrolled](https://react.dev/reference/react-dom/components/input#controlling-an-input-with-a-state-variable) by React Team — when to use each approach
