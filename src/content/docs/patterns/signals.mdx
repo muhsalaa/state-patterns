@@ -102,7 +102,7 @@ Valtio wraps your state in a `Proxy` that intercepts reads and writes. `useSnaps
 Signals invert React's contract. React says "the render function is the truth — run it to find out what changed." Signals say "the value is the truth — track exactly who reads it and notify them when it changes." The signal approach eliminates the virtual DOM and reduces unnecessary computation. The cost is that dependency tracking is implicit — a signal read inside a callback that never executes will not be tracked, which can cause stale closures if you are not careful.
 
 :::caution
-Read the specific library&#39;s documentation for threading and notification guarantees.
+Read the specific library's documentation for threading and notification guarantees.
 :::
 
 ## Try it yourself

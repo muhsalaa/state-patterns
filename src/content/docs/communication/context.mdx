@@ -58,7 +58,7 @@ const AppContext = createContext<{
   theme: Theme
   user: User | null
   notifications: Notification[]
-}>(...)
+}>(null as any)
 ```
 
 Split independent concerns into separate contexts. Theme changes shouldn't re-render notification badges.
