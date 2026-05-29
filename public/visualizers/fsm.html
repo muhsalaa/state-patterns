@@ -625,7 +625,6 @@
           if (!pathData) return;
 
           const isActive = (tr.from === activeState);
-          const isRecent = animate && false; // handled via CSS animation
 
           // marker
           const markerId = 'arrowhead-' + key.replace('→', '-');
@@ -671,9 +670,9 @@
             defs.appendChild(style);
           }
 
-          svg.appendChild(defs);
           svg.appendChild(path);
         });
+        svg.appendChild(defs);
       });
     });
   }
