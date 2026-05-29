@@ -59,7 +59,9 @@ bus.emit('user:login', { userId: 'abc-123' })
 
 // Any component can listen
 useEffect(() => {
-  bus.on('user:login', ({ userId }) => fetchUserProfile(userId))
+  const handler = ({ userId }: { userId: string }) =>
+    fetchUserProfile(userId)
+  bus.on('user:login', handler)
   return () => bus.off('user:login', handler) // cleanup!
 }, [])
 ```
